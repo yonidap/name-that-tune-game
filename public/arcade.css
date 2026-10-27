@@ -1,0 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Shade&family=Orbitron:wght@600;800;900&family=Rajdhani:wght@600;700&display=swap');
+
+:root{
+  --arcade-yellow:#f4ff38;
+  --arcade-cyan:#36efff;
+  --arcade-pink:#ff4fc7;
+  --arcade-red:#ff365f;
+  --arcade-ink:#050507;
+  --arcade-panel:#0a0d15;
+  --arcade-line:#353b50;
+  --font-display:"Bungee",Impact,sans-serif;
+  --font-logo:"Bungee Shade","Bungee",Impact,sans-serif;
+  --font-digital:"Orbitron",ui-monospace,monospace;
+  --font-ui:"Rajdhani",system-ui,sans-serif;
+}
+
+body{font-family:var(--font-ui);font-weight:600;background:
+  radial-gradient(circle at 12% 8%,rgba(54,239,255,.09),transparent 28%),
+  radial-gradient(circle at 88% 10%,rgba(255,79,199,.10),transparent 28%),
+  linear-gradient(rgba(255,255,255,.026) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(255,255,255,.026) 1px,transparent 1px),
+  #050507;background-size:auto,auto,42px 42px,42px 42px,auto}
+
+body::after{content:"";position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom,transparent 0 3px,rgba(255,255,255,.012) 3px 4px);z-index:999}
+
+.brand h1,.team-name,.waiting-title,.host-answer h2,.controller-head h1,.captain-head h1{font-family:var(--font-display)!important;text-transform:uppercase;letter-spacing:-.04em}
+.brand h1{font-size:clamp(38px,6vw,76px)!important;line-height:.86!important;text-shadow:4px 4px 0 rgba(255,79,199,.28)}
+.eyebrow,.room-mini,.team-tag,.heard,.judge-value,.connection-strip span,.pin-label{font-family:var(--font-digital)!important;letter-spacing:.14em}
+.score,.room-code,.host-pin,.mini-score,.captain-score,.point-number,.countdown{font-family:var(--font-digital)!important}
+.btn,.play-or-stop,.lock-btn,.team-choice,.judge-btn{font-family:var(--font-display)!important}
+
+.card,.controller-card,.join-panel,.team-panel,.captain-stage,.round-splash,.play-stage{
+  border-radius:0!important;
+  clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px)
+}
+.btn,.round-badge,.pill,.team-choice,.lock-btn{border-radius:0!important;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%)}
+
+/* Setup screen: make it feel like a title screen, not a form */
+body[data-mode="display"][data-phase="NONE"] #app{max-width:1180px;padding-top:12px}
+body[data-mode="display"][data-phase="NONE"] .setup-shell{gap:12px;position:relative}
+body[data-mode="display"][data-phase="NONE"] .brand{display:block;text-align:center;padding:16px 10px 4px;position:relative;overflow:visible}
+body[data-mode="display"][data-phase="NONE"] .brand .eyebrow{display:inline-block;background:var(--arcade-cyan);color:#050507;padding:7px 16px;transform:rotate(-1.4deg);clip-path:polygon(6% 0,100% 0,94% 100%,0 100%)}
+body[data-mode="display"][data-phase="NONE"] .brand h1{font-family:var(--font-logo)!important;font-size:clamp(58px,10vw,128px)!important;color:var(--arcade-yellow);margin:12px 0 4px!important;line-height:.82!important;transform:rotate(-1deg);text-shadow:none}
+body[data-mode="display"][data-phase="NONE"] .brand h1::before{content:"NAME ";font-family:var(--font-display);color:#fff;text-shadow:5px 5px 0 #263044}
+body[data-mode="display"][data-phase="NONE"] .brand h1{font-size:0!important}
+body[data-mode="display"][data-phase="NONE"] .brand h1::after{content:"THAT TUNE";font-family:var(--font-logo);font-size:clamp(58px,10vw,128px);color:var(--arcade-yellow)}
+body[data-mode="display"][data-phase="NONE"] .brand .subtitle{font-family:var(--font-digital);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:#8d94aa;margin-top:10px}
+body[data-mode="display"][data-phase="NONE"] .brand .live-pill{display:none}
+
+body[data-mode="display"][data-phase="NONE"] .setup-card{position:relative;overflow:visible;padding:30px 30px 28px!important;border:2px solid var(--arcade-line)!important;background:linear-gradient(180deg,#0c0f18,#06070b)!important;box-shadow:14px 14px 0 #0f121d;clip-path:polygon(22px 0,100% 0,100% calc(100% - 22px),calc(100% - 22px) 100%,0 100%,0 22px)!important}
+body[data-mode="display"][data-phase="NONE"] .setup-card::before{content:"";position:absolute;left:0;right:0;top:0;height:7px;background:linear-gradient(90deg,var(--arcade-cyan),var(--arcade-yellow),var(--arcade-pink))}
+body[data-mode="display"][data-phase="NONE"] .setup-card::after{content:"⚡  PICK YOUR BATTLE  ★";position:absolute;right:22px;top:-17px;background:var(--arcade-pink);color:white;font-family:var(--font-display);font-size:12px;padding:7px 13px;transform:rotate(2deg);clip-path:polygon(7% 0,100% 0,93% 100%,0 100%)}
+
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2{position:relative;gap:20px;margin-top:8px;margin-bottom:8px}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2::after{content:"VS";position:absolute;left:50%;top:50%;transform:translate(-50%,-25%) rotate(-8deg);z-index:3;font-family:var(--font-logo);font-size:31px;color:var(--arcade-yellow);pointer-events:none}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 .field{position:relative;padding:16px 18px;background:#07090e;border:2px solid;clip-path:polygon(17px 0,100% 0,calc(100% - 17px) 100%,0 100%)}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 .field:first-child{border-color:rgba(54,239,255,.65);transform:rotate(-.45deg)}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 .field:last-child{border-color:rgba(255,79,199,.65);transform:rotate(.45deg)}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 .field:first-child::after{content:"⚡";position:absolute;right:14px;top:8px;color:var(--arcade-cyan);font-size:24px;opacity:.6}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 .field:last-child::after{content:"★";position:absolute;right:14px;top:8px;color:var(--arcade-pink);font-size:22px;opacity:.6}
+body[data-mode="display"][data-phase="NONE"] .setup-card .field label{font-family:var(--font-digital)!important;font-size:10px!important;letter-spacing:.18em!important;color:#aeb4c7!important;text-transform:uppercase}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 input{border:0!important;border-bottom:2px solid #343a4c!important;border-radius:0!important;background:transparent!important;font-family:var(--font-display)!important;font-size:clamp(24px,3.4vw,40px)!important;padding:4px 0 8px!important;height:auto!important}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 .field:first-child input:focus{border-bottom-color:var(--arcade-cyan)!important;box-shadow:none!important}
+body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 .field:last-child input:focus{border-bottom-color:var(--arcade-pink)!important;box-shadow:none!important}
+
+body[data-mode="display"][data-phase="NONE"] .setup-card>.field{position:relative;margin-top:8px;padding-top:15px}
+body[data-mode="display"][data-phase="NONE"] .setup-card>.field::before{content:"02";position:absolute;left:0;top:-10px;background:var(--arcade-yellow);color:#050507;font-family:var(--font-digital);font-size:10px;padding:5px 7px;transform:rotate(-3deg)}
+body[data-mode="display"][data-phase="NONE"] .setup-card>.field label{font-family:var(--font-display)!important;font-size:16px!important;color:white!important;padding-left:38px}
+body[data-mode="display"][data-phase="NONE"] .setup-card select{appearance:none!important;-webkit-appearance:none!important;border:2px solid #444b60!important;border-radius:0!important;background:linear-gradient(90deg,rgba(244,255,56,.07),#07090e 28%)!important;color:white!important;font-family:var(--font-display)!important;font-size:clamp(20px,3vw,31px)!important;min-height:74px!important;padding:0 62px 0 22px!important;clip-path:polygon(14px 0,100% 0,calc(100% - 14px) 100%,0 100%);background-image:linear-gradient(45deg,transparent 50%,var(--arcade-yellow) 50%),linear-gradient(135deg,var(--arcade-yellow) 50%,transparent 50%),linear-gradient(90deg,rgba(244,255,56,.07),#07090e 28%)!important;background-position:calc(100% - 30px) 31px,calc(100% - 22px) 31px,0 0!important;background-size:8px 8px,8px 8px,100% 100%!important;background-repeat:no-repeat!important}
+body[data-mode="display"][data-phase="NONE"] .setup-card select:focus{border-color:var(--arcade-yellow)!important;box-shadow:0 0 0 2px rgba(244,255,56,.08)!important}
+
+body[data-mode="display"][data-phase="NONE"] #create-game{min-height:92px!important;margin-top:12px!important;background:var(--arcade-yellow)!important;color:#050507!important;border:0!important;border-radius:0!important;font-family:var(--font-display)!important;font-size:clamp(24px,4vw,40px)!important;clip-path:polygon(20px 0,100% 0,calc(100% - 20px) 100%,0 100%)!important;box-shadow:9px 9px 0 #737a0b!important;letter-spacing:-.02em}
+body[data-mode="display"][data-phase="NONE"] #create-game::before{content:"▶ ";font-size:.72em}
+
+/* Lobby / game-show shapes */
+.join-panel,.team-panel,.play-stage,.round-splash{border-width:2px!important}
+.room-code{color:var(--arcade-yellow)!important;text-shadow:6px 6px 0 #343800;font-weight:900!important}
+.team-panel.active{transform:translateY(-4px) rotate(-.35deg)}
+.team-b.active{transform:translateY(-4px) rotate(.35deg)}
+.versus{font-family:var(--font-logo)!important;color:var(--arcade-yellow)!important;font-size:18px!important}
+.round-word,.answer-reveal h2,.final-stage h2,.controller-round,.your-turn-label,.steal-flash{font-family:var(--font-logo)!important}
+.point-number{color:var(--arcade-yellow)!important;text-shadow:7px 7px 0 #343800}
+.vinyl-core{font-family:var(--font-display)!important;background:var(--arcade-yellow)!important}
+
+/* Controller buttons: physical-game-control feel */
+.judge-btn{border-radius:0!important;clip-path:polygon(14px 0,100% 0,calc(100% - 14px) 100%,0 100%)!important;box-shadow:6px 6px 0 #000!important}
+.judge-btn.correct{background:#65ff8f!important;color:#031408!important}
+.judge-btn.wrong{background:var(--arcade-red)!important;color:white!important}
+.play-or-stop{border-radius:0!important;clip-path:polygon(17px 0,100% 0,calc(100% - 17px) 100%,0 100%)!important;box-shadow:8px 8px 0 #737a0b!important}
+.play-or-stop.stop{box-shadow:8px 8px 0 #681326!important}
+.team-choice{border-radius:0!important;clip-path:polygon(14px 0,100% 0,calc(100% - 14px) 100%,0 100%)!important}
+
+@media(max-width:760px){
+  body[data-mode="display"][data-phase="NONE"] .brand h1::before{content:""}
+  body[data-mode="display"][data-phase="NONE"] .brand h1::after{font-size:clamp(52px,17vw,86px)}
+  body[data-mode="display"][data-phase="NONE"] .setup-card{padding:22px 14px 24px!important;box-shadow:8px 8px 0 #0f121d}
+  body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2{grid-template-columns:1fr!important;gap:10px}
+  body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2::after{position:static;transform:rotate(-7deg);text-align:center;font-size:22px;margin:-1px 0 -5px}
+  body[data-mode="display"][data-phase="NONE"] .setup-card .grid-2 .field{transform:none!important}
+  body[data-mode="display"][data-phase="NONE"] #create-game{min-height:78px!important}
+}
+
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
