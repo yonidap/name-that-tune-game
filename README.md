@@ -1,38 +1,68 @@
 # Name That Tune — real-time party game
 
-A two-team music guessing game with a dedicated audience/game screen, a host-controller phone, and two captain phones. The game screen is connected to the speakers; captain phones remotely play/pause the current snippet, while only the host phone judges answers and advances the game. Points decrease as more of the snippet is heard.
+A two-team music guessing game with a dedicated audience/game screen, a host-controller phone, and one captain phone per team. The game screen is connected to the speakers. Captains control playback; only the host judges answers and advances the game.
 
-## Current MVP
+## Current game flow
 
-- Two teams with one captain each
-- Dedicated audience/game screen with no admin controls
-- Separate host-controller phone protected by a room PIN
-- Room code + phone join flow
-- Song answer visible only to the host controller until reveal
-- Easy / Medium / Hard rounds
-- Short (15), Normal (21), and Full (40) game lengths
-- Remote play/pause from the active captain
-- Scoring based on actual audio position, not wall-clock time
-- Pause / discuss / continue without losing points while paused
-- Lock answer
-- 1-point steal after an incorrect answer
-- Manual score correction and undo
-- Reconnect tokens for host and captains
-- Missing-audio demo mode for testing the full flow
-- Render deployment configuration
+- Two teams, one captain each.
+- Dedicated audience/game screen with no admin controls.
+- Separate host-controller phone protected by a 4-digit room PIN.
+- Join by QR code or 4-character room code.
+- Easy / Medium / Hard rounds.
+- Game lengths: Quick Hit (15 songs), Main Event (21), Full Battle (40).
+- Turns alternate between teams; Medium starts with the opposite team to reduce first-player bias.
+- Captains can PLAY, STOP, continue the current play, and LOCK ANSWER.
+- STOP only pauses the audio; thinking time does not reduce the score.
+- The host is the only client that can mark CORRECT / WRONG, REVEAL, NEXT, UNDO, or manually correct scores.
+- The answer is never sent to captain clients. It is sent to the audience screen only after reveal.
 
-## Run locally
+## Scoring and playback
 
-```bash
-npm install
-npm start
-```
+A normal turn starts at **10 points**.
 
-Open `http://localhost:3000/host` on the computer connected to the speakers. Create a room. The lobby shows a `/control/ROOM` link + PIN for the host phone and a `/join/ROOM` link for both captain phones.
+### First playback
 
-## Audio files
+As more of the configured snippet is heard, the value falls from **10 → 9 → 8 → 7 → 6 → 5**. If the first complete playback finishes, the song is worth **5 points**.
 
-Copyrighted music is **not committed to this repository**. Put your pre-cut snippets in `public/audio/` using the filenames defined in `data/songs.js`.
+The captain may stop and continue the first playback as many times as needed. Pausing does not consume a playback and does not reduce the score.
+
+### One replay only
+
+After the first complete playback, the captain gets exactly **one replay from the beginning**. During that second playback the value continues down from **5 → 4 → 3 → 2**.
+
+After the second complete playback:
+
+- the value is **2 points**;
+- playback is disabled;
+- the captain must lock an answer.
+
+A third playback is rejected by the server, not merely hidden in the UI.
+
+## Wrong answers and steal
+
+When the active team locks an answer, the host marks it correct or wrong.
+
+- Correct: the active team receives the current point value.
+- Wrong: the other team gets a **10-second steal window** worth **1 point**.
+- The stealing captain must lock an answer before the timer expires.
+- An unlocked steal automatically expires and reveals the song.
+- The host can judge a steal only after the stealing captain has locked it.
+
+## Resilience and controls
+
+- Server-side state is authoritative for phase, score, playback count, timing, and permissions.
+- Stale audio progress events are ignored with a per-playback sequence number.
+- If the main game screen disconnects during playback, the room fails safe to `PAUSED` and audio readiness is revoked.
+- After a display refresh, the display session is validated before restoration and speakers must be enabled again.
+- Host and captain phones can reconnect using their saved tokens.
+- The host can reset a stuck captain slot while the game is still in the lobby.
+- `UNDO` restores the previous meaningful game state. For example, undo immediately after `LOCK ANSWER` returns to the paused decision state instead of jumping to an earlier song.
+- `PLAY AGAIN` starts a fresh shuffled game with the same room/controllers and clears the old score/history.
+- The main display also offers `NEW ROOM` after the game ends.
+
+## Audio handling
+
+Copyrighted music is **not committed to this repository**. Put pre-cut snippets in `public/audio/` using the filenames defined in `data/songs.js`.
 
 Example:
 
@@ -42,31 +72,73 @@ public/audio/billie-jean.mp3
 ...
 ```
 
-When a file is missing, the host automatically uses a generated demo tone. That makes it possible to test all real-time game mechanics before loading the actual snippets.
+The configured `duration` in `data/songs.js` is the authoritative snippet length. If a media file is slightly longer, playback is stopped at the configured duration. If it ends slightly earlier, the media end still completes that playback.
 
-The `sourceStart` field in `data/songs.js` is only a preparation reference. Timings can differ between releases and karaoke/instrumental versions, so verify each final snippet by ear before the event.
+When a file is missing or cannot load, the display falls back to a generated demo tone **and shows a visible warning on both the host controller and audience screen**. This keeps the mechanics testable without silently pretending the real song loaded.
 
-## Production notes
+The `sourceStart` field is only a preparation reference for cutting the source audio. Timings can differ between releases and karaoke/instrumental versions, so verify each final snippet by ear.
 
-The MVP keeps game rooms in Node process memory. A server restart clears active rooms. For a party session on a single Render instance this is acceptable; a later production version should persist snapshots in Redis/Postgres and use a Server-Sent Events (SSE) + HTTP actions adapter if horizontally scaled.
+## Run locally
 
-## Game state
+```bash
+npm install
+npm start
+```
 
-Main phases:
+Open `http://localhost:3000/host` on the computer connected to the speakers. Create a room, scan the Captain/Host QR codes, enable speakers on the game screen, then start from the host phone.
+
+## Automated audit
+
+```bash
+npm run check
+npm test
+```
+
+CI runs both commands on every push and pull request. The integration test exercises the real HTTP/SSE state machine, including:
+
+- room creation and reconnect;
+- server-side start gating;
+- 10 → 5 → 2 scoring across two playbacks;
+- pause/continue behavior;
+- rejection of a third playback;
+- answer locking and undo;
+- correct scoring;
+- steal timeout;
+- display disconnect fail-safe;
+- captain-slot reset;
+- the 40-song bank and 12/14/14 difficulty split.
+
+## State machine
 
 ```text
 LOBBY
   → ROUND_INTRO
   → READY ↔ PLAYING ↔ PAUSED
   → ANSWER_LOCKED
-  → REVEAL
-       ↘ on wrong: STEAL → STEAL_LOCKED → REVEAL
+      ├─ correct → REVEAL
+      └─ wrong   → STEAL → STEAL_LOCKED → REVEAL
+                         ↘ timeout → REVEAL
   → next song / next round
   → FINISHED
 ```
 
-The host-controller phone receives title and artist. The game screen receives only the audio source until reveal, so the audience cannot see the answer early. Captain clients never receive the answer.
+## Architecture
 
-## Transport
+The app intentionally stays small:
 
-The app deliberately uses only Node.js built-ins: captain commands are HTTP POST actions and server-to-client real-time updates use Server-Sent Events (SSE). This keeps deployment dependency-free while preserving low-latency party-game controls.
+- `src/server.js` — the single authoritative game server/state machine.
+- `public/game.js` — the single main browser controller for audience, host, and captain modes.
+- HTTP POST actions — client commands.
+- Server-Sent Events (SSE) — real-time server-to-client state and audio commands.
+- `data/songs.js` — song metadata and snippet durations.
+- `test/integration.test.js` — end-to-end state-machine audit.
+
+There is no separate replay patch layer or second game server.
+
+## Production limitations
+
+The current MVP stores rooms **in the Node process memory**. A Render restart, redeploy, or process crash will erase active rooms. This is acceptable for development and a single party session, but it is the main remaining architectural limitation. Do not deploy changes during an active game. A future hardened version should persist room snapshots in Redis/Postgres.
+
+The QR generator and Google Fonts are loaded from external CDNs. If the QR library cannot load, the room code/manual join path still works; if the fonts fail, browser fallback fonts are used.
+
+The host PIN is intended for a low-stakes private party game, not strong authentication. There is currently no brute-force rate limiting on the 4-digit PIN.
