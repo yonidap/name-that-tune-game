@@ -1,0 +1,2 @@
+.points{gap:4px;font-size:20px;flex-wrap:nowrap}.play-or-stop:disabled{opacity:.48;filter:none;background:#20232d;color:#8f96aa;box-shadow:5px 5px 0 #090a0f}.captain-stage .heard{margin-top:8px}.judge-value span{min-width:1.5ch;display:inline-block}.new-room-control{max-width:420px;margin:22px auto 0;display:block}.captain-tools{width:100%;margin-top:8px}
+@media(max-width:560px){.points{font-size:16px;gap:3px}.play-or-stop:disabled{font-size:20px}}
