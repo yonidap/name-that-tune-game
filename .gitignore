@@ -1,0 +1,7 @@
+node_modules/
+.env
+.DS_Store
+public/audio/*.mp3
+public/audio/*.m4a
+public/audio/*.wav
+!public/audio/README.md
