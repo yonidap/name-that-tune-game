@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: name-that-tune-game
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /api/health
