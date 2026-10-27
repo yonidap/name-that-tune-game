@@ -101,9 +101,9 @@ try {
 
   play = await post('/api/action', { action:'captain:play', roomCode, token:tokenA, team:'A' });
   seq = play.body.playbackSeq;
-  await post('/api/action', { action:'display:audioEnded', roomCode, token:displayToken, seq, position:duration });
+  await post('/api/action', { action:'display:audioEnded', roomCode, token:displayToken, seq, position:Math.max(0, duration - 0.4) });
   state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
-  assert.equal(state.playbacksCompleted, 1);
+  assert.equal(state.playbacksCompleted, 1, 'a slightly shorter media file should still count as a complete configured snippet');
   assert.equal(state.awaitingReplay, true);
   assert.equal(state.currentPoints, 5);
 
@@ -121,6 +121,14 @@ try {
   assert.equal((await post('/api/action', { action:'captain:play', roomCode, token:tokenA, team:'A' })).status, 409);
 
   assert.equal((await post('/api/action', { action:'captain:lockAnswer', roomCode, token:tokenA, team:'A' })).status, 200);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'ANSWER_LOCKED');
+  assert.equal((await post('/api/action', { action:'host:undo', roomCode, token:hostToken })).status, 200);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'PAUSED', 'undo after lock must only unlock the answer');
+  assert.equal(state.currentPoints, 2);
+  assert.equal((await post('/api/action', { action:'captain:lockAnswer', roomCode, token:tokenA, team:'A' })).status, 200);
+
   const correct = await post('/api/action', { action:'host:markCorrect', roomCode, token:hostToken });
   assert.equal(correct.status, 200); assert.equal(correct.body.awarded, 2);
   state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
