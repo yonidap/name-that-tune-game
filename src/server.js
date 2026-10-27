@@ -52,6 +52,7 @@ function roundLabel(difficulty) { return difficulty === 'easy' ? 'EASY' : diffic
 function connectionStatus(room) {
   const clients = [...room.clients];
   return {
+    display: clients.some((c) => c.role === 'display'),
     host: clients.some((c) => c.role === 'host'),
     A: clients.some((c) => c.role === 'captain' && c.team === 'A'),
     B: clients.some((c) => c.role === 'captain' && c.team === 'B')
@@ -63,10 +64,11 @@ function publicState(room, role, team = null) {
     roomCode: room.code, phase: room.phase, round: room.round, roundLabel: roundLabel(room.round), currentIndex: room.currentIndex,
     totalSongs: room.playlist.length, activeTeam: room.activeTeam, turnOwner: room.turnOwner, scores: room.scores, teamNames: room.teamNames,
     listenedSeconds: Number(room.listenedSeconds.toFixed(2)), currentPoints: room.currentPoints, duration: song?.duration ?? 0,
-    scoring: song?.scoring ?? [], connected: connectionStatus(room), stealDeadline: room.stealDeadline,
+    scoring: song?.scoring ?? [], connected: connectionStatus(room), audioReady: room.audioReady, stealDeadline: room.stealDeadline,
     songNumber: room.currentIndex + 1, canControl: team ? room.activeTeam === team : false
   };
-  if (role === 'host') return { ...common, gameLength: room.gameLength, song: song ? { id: song.id, title: song.title, artist: song.artist, difficulty: song.difficulty, audioFile: song.audioFile, duration: song.duration, sourceStart: song.sourceStart } : null };
+  if (role === 'host') return { ...common, gameLength: room.gameLength, song: song ? { id: song.id, title: song.title, artist: song.artist, difficulty: song.difficulty, duration: song.duration, sourceStart: song.sourceStart } : null };
+  if (role === 'display') return { ...common, gameLength: room.gameLength, song: song ? { id: song.id, difficulty: song.difficulty, audioFile: song.audioFile, duration: song.duration, ...(room.phase === 'REVEAL' || room.phase === 'FINISHED' ? { title: song.title, artist: song.artist } : {}) } : null };
   return { ...common, song: song ? { difficulty: song.difficulty, duration: song.duration } : null };
 }
 function sendSse(client, event, data) {
@@ -75,8 +77,8 @@ function sendSse(client, event, data) {
 function broadcastState(room) {
   for (const client of room.clients) sendSse(client, 'state', publicState(room, client.role, client.team));
 }
-function sendHostEvent(room, event, data = {}) {
-  for (const client of room.clients) if (client.role === 'host') sendSse(client, event, data);
+function sendDisplayEvent(room, event, data = {}) {
+  for (const client of room.clients) if (client.role === 'display') sendSse(client, event, data);
 }
 function snapshot(room) {
   room.history.push({ phase: room.phase, currentIndex: room.currentIndex, round: room.round, activeTeam: room.activeTeam, turnOwner: room.turnOwner, scores: { ...room.scores }, listenedSeconds: room.listenedSeconds, currentPoints: room.currentPoints, revealed: room.revealed, stealDeadline: room.stealDeadline });
@@ -107,6 +109,7 @@ async function readJson(req) {
 }
 function cleanCode(value) { return String(value || '').toUpperCase(); }
 function roomOrError(code, res) { const room = rooms.get(cleanCode(code)); if (!room) json(res, 404, { ok: false, error: 'ROOM_NOT_FOUND' }); return room; }
+function displayOk(room, suppliedToken) { return Boolean(suppliedToken && suppliedToken === room.displayToken); }
 function hostOk(room, suppliedToken) { return Boolean(suppliedToken && suppliedToken === room.hostToken); }
 function captainOk(room, team, suppliedToken) { return ['A', 'B'].includes(team) && suppliedToken && room.captainTokens[team] === suppliedToken; }
 
@@ -115,15 +118,24 @@ async function handleApi(req, res, url) {
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   let body; try { body = await readJson(req); } catch { return json(res, 400, { ok: false, error: 'INVALID_JSON' }); }
 
-  if (url.pathname === '/api/host/create') {
-    const code = makeRoomCode(); const hostToken = token(); const lengthKey = GAME_LENGTHS[body.gameLength] ? body.gameLength : 'normal';
+  if (url.pathname === '/api/display/create') {
+    const code = makeRoomCode(); const displayToken = token(); const hostPin = String(1000 + Math.floor(Math.random() * 9000)); const lengthKey = GAME_LENGTHS[body.gameLength] ? body.gameLength : 'normal';
     const room = {
-      code, hostToken, captainTokens: { A: null, B: null }, teamNames: { A: String(body.teamNames?.A || 'Team A').slice(0,24), B: String(body.teamNames?.B || 'Team B').slice(0,24) },
+      code, displayToken, hostPin, hostToken: null, captainTokens: { A: null, B: null }, teamNames: { A: String(body.teamNames?.A || 'Team A').slice(0,24), B: String(body.teamNames?.B || 'Team B').slice(0,24) },
       playlist: makePlaylist(lengthKey), gameLength: lengthKey, phase: 'LOBBY', currentIndex: -1, round: 'easy', activeTeam: 'A', turnOwner: 'A',
-      scores: { A: 0, B: 0 }, listenedSeconds: 0, currentPoints: 5, revealed: false, stealDeadline: null, history: [], clients: new Set(), createdAt: Date.now()
+      scores: { A: 0, B: 0 }, listenedSeconds: 0, currentPoints: 5, revealed: false, audioReady: false, stealDeadline: null, history: [], clients: new Set(), createdAt: Date.now()
     };
     rooms.set(code, room);
-    return json(res, 200, { ok: true, roomCode: code, hostToken, state: publicState(room, 'host') });
+    return json(res, 200, { ok: true, roomCode: code, displayToken, hostPin, state: publicState(room, 'display') });
+  }
+
+  if (url.pathname === '/api/host/join') {
+    const room = roomOrError(body.roomCode, res); if (!room) return;
+    if (body.hostToken && room.hostToken === body.hostToken) return json(res,200,{ok:true,hostToken:body.hostToken,state:publicState(room,'host')});
+    if (String(body.hostPin || '') !== room.hostPin) return json(res,403,{ok:false,error:'BAD_PIN'});
+    if (!room.hostToken) room.hostToken = token();
+    broadcastState(room);
+    return json(res,200,{ok:true,hostToken:room.hostToken,state:publicState(room,'host')});
   }
 
   if (url.pathname === '/api/captain/join') {
@@ -139,20 +151,23 @@ async function handleApi(req, res, url) {
   const room = roomOrError(body.roomCode, res); if (!room) return;
   const action = body.action;
   const isHostAction = action.startsWith('host:');
+  const isDisplayAction = action.startsWith('display:');
   if (isHostAction && !hostOk(room, body.token)) return json(res, 403, { ok:false,error:'UNAUTHORIZED' });
+  if (isDisplayAction && !displayOk(room, body.token)) return json(res, 403, { ok:false,error:'UNAUTHORIZED' });
   if (action.startsWith('captain:') && !captainOk(room, body.team, body.token)) return json(res,403,{ok:false,error:'UNAUTHORIZED'});
 
   if (action === 'host:start' && room.phase === 'LOBBY') { snapshot(room); loadSong(room,0); broadcastState(room); return json(res,200,{ok:true}); }
   if (action === 'host:beginRound' && room.phase === 'ROUND_INTRO') { room.phase='READY'; broadcastState(room); return json(res,200,{ok:true}); }
+  if (action === 'display:audioReady') { room.audioReady = Boolean(body.ready); broadcastState(room); return json(res,200,{ok:true}); }
   if (action === 'captain:play') {
     if (room.activeTeam !== body.team || !['READY','PAUSED'].includes(room.phase)) return json(res,409,{ok:false,error:'NOT_ALLOWED'});
-    room.phase='PLAYING'; sendHostEvent(room,'audio-play',{startAt:room.listenedSeconds}); broadcastState(room); return json(res,200,{ok:true});
+    room.phase='PLAYING'; sendDisplayEvent(room,'audio-play',{startAt:room.listenedSeconds}); broadcastState(room); return json(res,200,{ok:true});
   }
   if (action === 'captain:pause') {
     if (room.activeTeam !== body.team || room.phase !== 'PLAYING') return json(res,409,{ok:false,error:'NOT_ALLOWED'});
-    sendHostEvent(room,'audio-pause'); return json(res,200,{ok:true});
+    sendDisplayEvent(room,'audio-pause'); return json(res,200,{ok:true});
   }
-  if (action === 'host:audioProgress') {
+  if (action === 'display:audioProgress') {
     if (!['PLAYING','PAUSED'].includes(room.phase)) return json(res,200,{ok:true});
     const song=currentSong(room); if (!song) return json(res,409,{ok:false,error:'NO_SONG'});
     room.listenedSeconds=Math.max(room.listenedSeconds,Math.min(Number(body.position)||0,song.duration)); room.currentPoints=getPoints(song,room.listenedSeconds);
@@ -176,19 +191,20 @@ async function handleApi(req, res, url) {
     if (['STEAL','STEAL_LOCKED'].includes(room.phase)) { snapshot(room); room.phase='REVEAL'; room.revealed=true; room.stealDeadline=null; broadcastState(room); return json(res,200,{ok:true,steal:false}); }
     return json(res,409,{ok:false,error:'NOT_ALLOWED'});
   }
-  if (action === 'host:reveal') { if (room.phase==='PLAYING') sendHostEvent(room,'audio-pause'); snapshot(room); room.phase='REVEAL'; room.revealed=true; room.stealDeadline=null; broadcastState(room); return json(res,200,{ok:true}); }
+  if (action === 'host:reveal') { if (room.phase==='PLAYING') sendDisplayEvent(room,'audio-pause'); snapshot(room); room.phase='REVEAL'; room.revealed=true; room.stealDeadline=null; broadcastState(room); return json(res,200,{ok:true}); }
   if (action === 'host:next') { if (room.phase!=='REVEAL') return json(res,409,{ok:false,error:'NOT_ALLOWED'}); snapshot(room); loadSong(room,room.currentIndex+1); broadcastState(room); return json(res,200,{ok:true}); }
   if (action === 'host:adjustScore') { if (!['A','B'].includes(body.team)) return json(res,400,{ok:false,error:'INVALID_TEAM'}); snapshot(room); room.scores[body.team]=Math.max(0,room.scores[body.team]+Math.max(-10,Math.min(10,Number(body.delta)||0))); broadcastState(room); return json(res,200,{ok:true}); }
-  if (action === 'host:undo') { const previous=room.history.pop(); if (!previous) return json(res,409,{ok:false,error:'NO_HISTORY'}); restore(room,previous); sendHostEvent(room,'audio-pause'); broadcastState(room); return json(res,200,{ok:true}); }
+  if (action === 'host:undo') { const previous=room.history.pop(); if (!previous) return json(res,409,{ok:false,error:'NO_HISTORY'}); restore(room,previous); sendDisplayEvent(room,'audio-pause'); broadcastState(room); return json(res,200,{ok:true}); }
   return json(res, 409, { ok:false, error:'NOT_ALLOWED' });
 }
 
 function handleEvents(req, res, url) {
   const code=cleanCode(url.searchParams.get('room')); const role=url.searchParams.get('role'); const team=url.searchParams.get('team'); const suppliedToken=url.searchParams.get('token');
   const room=rooms.get(code); if (!room) { res.writeHead(404); return res.end(); }
+  if (role==='display' && !displayOk(room,suppliedToken)) { res.writeHead(403); return res.end(); }
   if (role==='host' && !hostOk(room,suppliedToken)) { res.writeHead(403); return res.end(); }
   if (role==='captain' && !captainOk(room,team,suppliedToken)) { res.writeHead(403); return res.end(); }
-  if (!['host','captain'].includes(role)) { res.writeHead(400); return res.end(); }
+  if (!['display','host','captain'].includes(role)) { res.writeHead(400); return res.end(); }
   res.writeHead(200, { 'content-type':'text/event-stream', 'cache-control':'no-cache, no-transform', 'connection':'keep-alive', 'x-accel-buffering':'no' });
   res.write(': connected\n\n');
   const client={res,role,team:role==='captain'?team:null}; room.clients.add(client); sendSse(client,'state',publicState(room,role,client.team)); broadcastState(room);
@@ -198,7 +214,7 @@ function handleEvents(req, res, url) {
 
 function serveStatic(req,res,url) {
   let pathname=decodeURIComponent(url.pathname);
-  if (pathname==='/' || pathname==='/host' || pathname.startsWith('/join/') || pathname.startsWith('/screen/')) pathname='/index.html';
+  if (pathname==='/' || pathname==='/host' || pathname.startsWith('/join/') || pathname.startsWith('/control/') || pathname.startsWith('/screen/')) pathname='/index.html';
   const normalized=path.normalize(pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/,'');
   const filePath=path.join(publicDir,normalized);
   if (!filePath.startsWith(publicDir)) { res.writeHead(403); return res.end('Forbidden'); }
