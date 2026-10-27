@@ -1,13 +1,14 @@
 {
   "name": "name-that-tune-game",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Real-time two-team music snippet guessing game with host and captain controllers.",
   "type": "module",
   "scripts": {
-    "dev": "node --watch src/server-v2.js",
-    "start": "node src/server-v2.js",
-    "check": "node --check src/server-v2.js && node --check public/game.js && node --check public/qr.js && node --check public/replay-ui.js && node --check data/songs.js"
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check public/game.js && node --check data/songs.js && node --check test/integration.test.js",
+    "test": "node test/integration.test.js"
   },
   "engines": { "node": ">=20" }
 }
