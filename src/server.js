@@ -108,7 +108,9 @@ function publicState(room, role, team = null) {
     stealDeadline: room.stealDeadline,
     songNumber: room.currentIndex + 1,
     canControl: team ? room.activeTeam === team : false,
-    readyToStart: readyToStart(room)
+    readyToStart: readyToStart(room),
+    audioFallback: room.audioFallback,
+    undoAvailable: room.history.length > 0
   };
   if (role === 'host') {
     return {
@@ -203,6 +205,7 @@ function resetSongState(room) {
   room.awaitingReplay = false;
   room.playbackSeq = 0;
   room.revealed = false;
+  room.audioFallback = null;
   room.stealDeadline = null;
   clearStealTimer(room);
 }
@@ -276,7 +279,7 @@ async function handleApi(req, res, url) {
       playlist: makePlaylist(lengthKey), gameLength: lengthKey, phase: 'LOBBY', currentIndex: -1, round: 'easy',
       activeTeam: 'A', turnOwner: 'A', scores: { A: 0, B: 0 }, audioPosition: 0, totalHeardSeconds: 0,
       currentPoints: 10, playbacksCompleted: 0, awaitingReplay: false, playbackSeq: 0,
-      revealed: false, audioReady: false, stealDeadline: null, stealTimer: null, history: [], clients: new Set(),
+      revealed: false, audioReady: false, audioFallback: null, stealDeadline: null, stealTimer: null, history: [], clients: new Set(),
       createdAt: now, updatedAt: now
     };
     rooms.set(code, room);
@@ -326,6 +329,7 @@ async function handleApi(req, res, url) {
   }
   if (action === 'host:beginRound') {
     if (room.phase !== 'ROUND_INTRO') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
+    snapshot(room);
     room.phase = 'READY'; broadcastState(room); return json(res, 200, { ok: true });
   }
   if (action === 'host:releaseCaptain') {
@@ -336,7 +340,7 @@ async function handleApi(req, res, url) {
   }
   if (action === 'host:restart') {
     if (room.phase !== 'FINISHED') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
-    snapshot(room);
+    room.history = [];
     room.playlist = makePlaylist(room.gameLength);
     room.scores = { A: 0, B: 0 };
     room.round = 'easy';
@@ -345,6 +349,12 @@ async function handleApi(req, res, url) {
   }
   if (action === 'display:audioReady') {
     room.audioReady = Boolean(body.ready); broadcastState(room); return json(res, 200, { ok: true });
+  }
+  if (action === 'display:audioStatus') {
+    const song = currentSong(room);
+    if (!song || String(body.songId || '') !== song.id) return json(res, 200, { ok: true, ignored: true });
+    room.audioFallback = Boolean(body.fallback);
+    broadcastState(room); return json(res, 200, { ok: true });
   }
   if (action === 'display:playbackFailed') {
     if (Number(body.seq) === room.playbackSeq && room.phase === 'PLAYING') room.phase = 'PAUSED';
@@ -385,8 +395,6 @@ async function handleApi(req, res, url) {
   if (action === 'display:audioEnded') {
     if (Number(body.seq) !== room.playbackSeq || room.awaitingReplay || !['PLAYING', 'PAUSED'].includes(room.phase)) return json(res, 200, { ok: true, ignored: true });
     const song = currentSong(room); if (!song) return json(res, 409, { ok: false, error: 'NO_SONG' });
-    const position = Math.max(0, Math.min(Number(body.position) || 0, song.duration));
-    if (position < song.duration - 0.20) return json(res, 409, { ok: false, error: 'AUDIO_NOT_FINISHED' });
     room.playbacksCompleted = Math.min(2, room.playbacksCompleted + 1);
     room.audioPosition = song.duration;
     room.totalHeardSeconds = Math.min(song.duration * 2, room.playbacksCompleted * song.duration);
@@ -398,10 +406,12 @@ async function handleApi(req, res, url) {
   if (action === 'captain:lockAnswer') {
     if (room.activeTeam !== body.team || !['READY', 'PAUSED'].includes(room.phase)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
     if (room.totalHeardSeconds < 0.05) return json(res, 409, { ok: false, error: 'HEAR_SOMETHING_FIRST' });
+    snapshot(room);
     room.phase = 'ANSWER_LOCKED'; broadcastState(room); return json(res, 200, { ok: true });
   }
   if (action === 'captain:lockSteal') {
     if (room.activeTeam !== body.team || room.phase !== 'STEAL' || !room.stealDeadline || Date.now() > room.stealDeadline) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
+    snapshot(room);
     clearStealTimer(room);
     room.phase = 'STEAL_LOCKED'; broadcastState(room); return json(res, 200, { ok: true });
   }
@@ -417,34 +427,34 @@ async function handleApi(req, res, url) {
       snapshot(room); startSteal(room); broadcastState(room); return json(res, 200, { ok: true, steal: true });
     }
     if (room.phase === 'STEAL_LOCKED') {
-      snapshot(room); reveal(room); broadcastState(room); return json(res, 200, { ok: true, steal: false });
+      snapshot(room); reveal(room); broadcastState(room); return json(res, 200, { ok: true, steal:false });
     }
-    return json(res, 409, { ok: false, error: 'ANSWER_NOT_LOCKED' });
+    return json(res, 409, { ok:false, error:'ANSWER_NOT_LOCKED' });
   }
   if (action === 'host:reveal') {
-    if (!['READY', 'PLAYING', 'PAUSED', 'ANSWER_LOCKED', 'STEAL', 'STEAL_LOCKED'].includes(room.phase)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
-    if (room.phase === 'PLAYING') sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });
-    snapshot(room); reveal(room); broadcastState(room); return json(res, 200, { ok: true });
+    if (!['READY', 'PLAYING', 'PAUSED', 'ANSWER_LOCKED', 'STEAL', 'STEAL_LOCKED'].includes(room.phase)) return json(res, 409, { ok:false, error:'NOT_ALLOWED' });
+    if (room.phase === 'PLAYING') sendDisplayEvent(room, 'audio-pause', { seq:room.playbackSeq });
+    snapshot(room); reveal(room); broadcastState(room); return json(res, 200, { ok:true });
   }
   if (action === 'host:next') {
-    if (room.phase !== 'REVEAL') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
-    snapshot(room); loadSong(room, room.currentIndex + 1); broadcastState(room); return json(res, 200, { ok: true });
+    if (room.phase !== 'REVEAL') return json(res, 409, { ok:false, error:'NOT_ALLOWED' });
+    snapshot(room); loadSong(room, room.currentIndex + 1); broadcastState(room); return json(res, 200, { ok:true });
   }
   if (action === 'host:adjustScore') {
-    if (!['A', 'B'].includes(body.team)) return json(res, 400, { ok: false, error: 'INVALID_TEAM' });
+    if (!['A','B'].includes(body.team)) return json(res, 400, { ok:false, error:'INVALID_TEAM' });
     snapshot(room);
     const delta = Math.max(-10, Math.min(10, Number(body.delta) || 0));
     room.scores[body.team] = Math.max(0, room.scores[body.team] + delta);
-    broadcastState(room); return json(res, 200, { ok: true });
+    broadcastState(room); return json(res, 200, { ok:true });
   }
   if (action === 'host:undo') {
     const previous = room.history.pop();
-    if (!previous) return json(res, 409, { ok: false, error: 'NO_HISTORY' });
+    if (!previous) return json(res, 409, { ok:false, error:'NO_HISTORY' });
     restore(room, previous);
-    sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });
-    broadcastState(room); return json(res, 200, { ok: true });
+    sendDisplayEvent(room, 'audio-pause', { seq:room.playbackSeq });
+    broadcastState(room); return json(res, 200, { ok:true });
   }
-  return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
+  return json(res, 409, { ok:false, error:'NOT_ALLOWED' });
 }
 
 function handleEvents(req, res, url) {
@@ -457,13 +467,14 @@ function handleEvents(req, res, url) {
   if (role === 'display' && !displayOk(room, suppliedToken)) { res.writeHead(403); return res.end(); }
   if (role === 'host' && !hostOk(room, suppliedToken)) { res.writeHead(403); return res.end(); }
   if (role === 'captain' && !captainOk(room, team, suppliedToken)) { res.writeHead(403); return res.end(); }
-  if (!['display', 'host', 'captain'].includes(role)) { res.writeHead(400); return res.end(); }
+  if (!['display','host','captain'].includes(role)) { res.writeHead(400); return res.end(); }
+  if (role === 'display' && [...room.clients].some((client) => client.role === 'display')) { res.writeHead(409); return res.end(); }
 
   res.writeHead(200, {
-    'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', 'connection': 'keep-alive', 'x-accel-buffering': 'no'
+    'content-type':'text/event-stream', 'cache-control':'no-cache, no-transform', 'connection':'keep-alive', 'x-accel-buffering':'no'
   });
   res.write(': connected\n\n');
-  const client = { res, role, team: role === 'captain' ? team : null };
+  const client = { res, role, team:role === 'captain' ? team : null };
   room.clients.add(client);
   sendSse(client, 'state', publicState(room, role, client.team));
   broadcastState(room);
@@ -480,7 +491,7 @@ function handleEvents(req, res, url) {
 }
 
 function serveStatic(req, res, url) {
-  if (!['GET', 'HEAD'].includes(req.method || 'GET')) { res.writeHead(405); return res.end(); }
+  if (!['GET','HEAD'].includes(req.method || 'GET')) { res.writeHead(405); return res.end(); }
   let pathname;
   try { pathname = decodeURIComponent(url.pathname); } catch { res.writeHead(400); return res.end('Bad request'); }
   if (pathname === '/' || pathname === '/host' || pathname.startsWith('/join/') || pathname.startsWith('/control/') || pathname.startsWith('/screen/')) pathname = '/index.html';
@@ -490,9 +501,9 @@ function serveStatic(req, res, url) {
   fs.stat(filePath, (err, stat) => {
     if (err || !stat.isFile()) { res.writeHead(404); return res.end('Not found'); }
     const headers = {
-      'content-type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
-      'cache-control': pathname.startsWith('/audio/') ? 'public, max-age=3600' : 'no-cache',
-      'x-content-type-options': 'nosniff'
+      'content-type':MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+      'cache-control':pathname.startsWith('/audio/') ? 'public, max-age=3600' : 'no-cache',
+      'x-content-type-options':'nosniff'
     };
     res.writeHead(200, headers);
     if (req.method === 'HEAD') return res.end();
@@ -509,7 +520,7 @@ export function createServer() {
       return serveStatic(req, res, url);
     } catch (error) {
       console.error(error);
-      if (!res.headersSent) json(res, 500, { ok: false, error: 'INTERNAL_ERROR' });
+      if (!res.headersSent) json(res, 500, { ok:false, error:'INTERNAL_ERROR' });
       else res.end();
     }
   });
