@@ -16,6 +16,7 @@ let audioUnlocked = false;
 let progressTimer = null;
 let demoUrl = null;
 let currentAudioKey = '';
+let currentAudioPromise = null;
 let countdownTimer = null;
 let eventSource = null;
 let selectedGameLength = 'normal';
@@ -73,7 +74,7 @@ function canPatchLive(previous, next) {
   if (!previous || !next) return false;
   return previous.phase === 'PLAYING' && next.phase === 'PLAYING' && previous.currentIndex === next.currentIndex &&
     previous.activeTeam === next.activeTeam && previous.audioReady === next.audioReady && sameConnections(previous, next) &&
-    previous.scores.A === next.scores.A && previous.scores.B === next.scores.B;
+    previous.scores.A === next.scores.A && previous.scores.B === next.scores.B && previous.audioFallback === next.audioFallback;
 }
 function connectEvents() {
   const token = mode === 'display' ? displayToken : mode === 'host' ? hostToken : captainToken;
@@ -109,7 +110,7 @@ function clearDisplaySession() {
   audio.pause();
   clearInterval(progressTimer);
   progressTimer = null;
-  state = null; roomCode = ''; displayToken = ''; hostPin = ''; audioUnlocked = false; currentAudioKey = ''; activePlaybackSeq = 0;
+  state = null; roomCode = ''; displayToken = ''; hostPin = ''; audioUnlocked = false; currentAudioKey = ''; currentAudioPromise = null; activePlaybackSeq = 0;
   history.replaceState({}, '', '/host');
   render();
 }
@@ -245,6 +246,7 @@ function displayGame(s) {
   return `<main class="shell game-shell audience-screen">
     <header class="game-top"><div class="round-badge ${difficultyClass(s.round)}">${esc(stageLabel)}</div><div class="room-mini">ROOM ${esc(roomCode)}</div></header>
     ${scoreCards(s)}
+    ${s.audioFallback ? '<div class="audio-warning">⚠ DEMO AUDIO — CURRENT SNIPPET FILE IS MISSING</div>' : ''}
     ${s.phase === 'ROUND_INTRO' ? `<section class="round-splash ${difficultyClass(s.round)}"><div class="round-number">${s.round === 'easy' ? '01' : s.round === 'medium' ? '02' : '03'}</div><div class="round-word">${esc(s.roundLabel)}</div><p>HOST — START THE ROUND</p></section>` : ''}
     ${!['ROUND_INTRO','FINISHED'].includes(s.phase) ? `<section class="play-stage ${reveal ? 'revealing' : ''}">${reveal ? `<div class="answer-reveal"><div class="micro-label">THE TUNE WAS</div><h2>${esc(s.song?.title || '')}</h2><p>${esc(s.song?.artist || '')}</p></div>` : `
       <div class="turn-banner">${esc(s.teamNames[s.activeTeam])}<span>${s.phase.startsWith('STEAL') ? 'STEAL' : 'YOUR TURN'}</span></div>
@@ -262,6 +264,8 @@ function bindDisplayControls() {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       const ctx = new Ctx(); await ctx.resume();
       const osc = ctx.createOscillator(); const gain = ctx.createGain(); gain.gain.value = .00001; osc.connect(gain).connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + .03);
+      const previousVolume = audio.volume;
+      audio.volume = 0; audio.src = createDemoTone(.08); audio.load(); await audio.play(); audio.pause(); audio.currentTime = 0; audio.volume = previousVolume; currentAudioKey = ''; currentAudioPromise = null;
       audioUnlocked = true;
       await emit('display:audioReady', { ready:true });
       render();
@@ -304,6 +308,7 @@ function renderHostController() {
   app.innerHTML = `<main class="shell phone-shell controller-shell">
     <header class="phone-header"><div><div class="micro-label">HOST · ${esc(roomCode)}</div><h1>NAME THAT TUNE</h1></div><div class="mini-score">${s.scores.A}–${s.scores.B}</div></header>
     ${hostConnectionStrip(s)}
+    ${s.audioFallback ? '<div class="audio-warning">⚠ CURRENT SONG IS USING DEMO AUDIO — SKIP OR FIX THE FILE</div>' : ''}
     ${s.phase === 'LOBBY' ? `<section class="controller-card center-stack"><div class="controller-icon">🎚</div><h2>ROOM READY?</h2><p>Both captains, the main screen and audio must be connected.</p><button class="primary-control" id="host-start" ${s.readyToStart ? '' : 'disabled'}>START GAME</button><details class="score-tools captain-tools"><summary>CAPTAIN SLOTS</summary><div class="score-adjust"><button data-release="A" ${s.captainClaimed?.A ? '' : 'disabled'}>RESET A</button><button data-release="B" ${s.captainClaimed?.B ? '' : 'disabled'}>RESET B</button></div></details></section>` : ''}
     ${s.phase === 'ROUND_INTRO' ? `<section class="controller-card round-control ${difficultyClass(s.round)} center-stack"><div class="micro-label">NEXT ROUND</div><div class="controller-round">${esc(s.roundLabel)}</div><button class="primary-control" id="begin-round">START ROUND</button></section>` : ''}
     ${!['LOBBY','ROUND_INTRO','FINISHED'].includes(s.phase) ? `<section class="controller-card host-game-card">
@@ -312,7 +317,7 @@ function renderHostController() {
       <div class="judge-status"><strong>${esc(s.teamNames[s.activeTeam])}</strong><span>${s.phase.startsWith('STEAL') ? 'STEAL' : s.phase.replaceAll('_',' ')}</span></div>
       <div class="judge-value"><span>${s.phase.startsWith('STEAL') ? 1 : s.currentPoints}</span> pts · ${heardText(s)}</div>
       ${canJudge ? `<div class="judge-buttons"><button class="judge-btn correct" id="correct">✓<span>CORRECT</span></button><button class="judge-btn wrong" id="wrong">✕<span>WRONG</span></button></div>` : `<div class="waiting-judge">${s.phase === 'PLAYING' ? 'Listening…' : s.phase === 'PAUSED' ? 'Captain is deciding…' : s.phase === 'STEAL' ? 'Steal team has 10 seconds to lock an answer…' : revealState ? 'Answer revealed' : 'Waiting for captain…'}</div>`}
-      <div class="controller-actions"><button class="secondary-control warn" id="reveal" ${revealState ? 'disabled' : ''}>REVEAL</button><button class="secondary-control next" id="next" ${revealState ? '' : 'disabled'}>NEXT →</button><button class="secondary-control" id="undo">UNDO</button></div>
+      <div class="controller-actions"><button class="secondary-control warn" id="reveal" ${revealState ? 'disabled' : ''}>REVEAL</button><button class="secondary-control next" id="next" ${revealState ? '' : 'disabled'}>NEXT →</button><button class="secondary-control" id="undo" ${s.undoAvailable ? '' : 'disabled'}>UNDO</button></div>
       <details class="score-tools"><summary>SCORE CORRECTION</summary><div class="score-adjust"><button data-score="A" data-delta="-1">A −1</button><button data-score="A" data-delta="1">A +1</button><button data-score="B" data-delta="-1">B −1</button><button data-score="B" data-delta="1">B +1</button></div></details>
     </section>` : ''}
     ${s.phase === 'FINISHED' ? `${finalScreen(s)}<button class="primary-control" id="play-again">↻ PLAY AGAIN</button>` : ''}
@@ -440,18 +445,22 @@ async function waitForAudioReady(timeoutMs = 6000) {
 async function prepareAudio(song) {
   if (!song || mode !== 'display') return;
   const key = `${song.id}:${song.audioFile}`;
-  if (currentAudioKey === key) return;
+  if (currentAudioKey === key && currentAudioPromise) return currentAudioPromise;
   currentAudioKey = key;
-  usingDemoAudio = false;
-  audio.src = song.audioFile; audio.load();
-  const ok = await waitForAudioReady(6000);
-  if (!ok) {
-    usingDemoAudio = true;
-    audio.src = createDemoTone(song.duration);
-    audio.load();
-    await waitForAudioReady(1200);
-  }
-  document.body.dataset.demoAudio = usingDemoAudio ? 'true' : 'false';
+  currentAudioPromise = (async () => {
+    usingDemoAudio = false;
+    audio.src = song.audioFile; audio.load();
+    const ok = await waitForAudioReady(6000);
+    if (!ok) {
+      usingDemoAudio = true;
+      audio.src = createDemoTone(song.duration);
+      audio.load();
+      await waitForAudioReady(1200);
+    }
+    document.body.dataset.demoAudio = usingDemoAudio ? 'true' : 'false';
+    await emit('display:audioStatus', { songId:song.id, fallback:usingDemoAudio });
+  })();
+  return currentAudioPromise;
 }
 function syncAudioForState() {
   if (mode !== 'display' || !state?.song) return;
@@ -469,7 +478,16 @@ async function handleAudioPlay({ startAt, seq }) {
     audio.currentTime = Math.min(Number(startAt) || 0, state.song.duration || 999);
     await audio.play();
     clearInterval(progressTimer);
-    progressTimer = setInterval(() => emit('display:audioProgress', { position:audio.currentTime, paused:audio.paused, seq:activePlaybackSeq }), 250);
+    progressTimer = setInterval(() => {
+      const configuredEnd = Number(state?.song?.duration || 0);
+      if (configuredEnd > 0 && audio.currentTime >= configuredEnd - .03) {
+        audio.pause();
+        clearInterval(progressTimer); progressTimer = null;
+        emit('display:audioEnded', { position:configuredEnd, seq:activePlaybackSeq });
+        return;
+      }
+      emit('display:audioProgress', { position:audio.currentTime, paused:audio.paused, seq:activePlaybackSeq });
+    }, 250);
   } catch (error) {
     console.error(error);
     await emit('display:playbackFailed', { seq:Number(seq) || 0 });
