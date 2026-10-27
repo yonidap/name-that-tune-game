@@ -1,0 +1,74 @@
+/* Final setup-screen proportion fixes — keep the arcade style, remove clipping. */
+body[data-mode="display"][data-phase="NONE"] .brand {
+  padding: 20px 10px 14px !important;
+  overflow: visible !important;
+}
+
+body[data-mode="display"][data-phase="NONE"] .brand h1 {
+  display: flex !important;
+  justify-content: center;
+  align-items: baseline;
+  gap: clamp(8px, 1.4vw, 18px);
+  width: 100%;
+  max-width: 100%;
+  margin: 16px auto 18px !important;
+  line-height: .88 !important;
+  white-space: nowrap;
+  transform: none !important;
+  overflow: visible;
+}
+
+body[data-mode="display"][data-phase="NONE"] .brand h1::before {
+  content: "NAME" !important;
+  display: inline-block;
+  font-family: var(--font-display) !important;
+  font-size: clamp(36px, 5.2vw, 68px) !important;
+  color: #fff !important;
+  text-shadow: 5px 5px 0 #263044 !important;
+}
+
+body[data-mode="display"][data-phase="NONE"] .brand h1::after {
+  content: "THAT TUNE" !important;
+  display: inline-block;
+  font-family: var(--font-logo) !important;
+  font-size: clamp(44px, 6.5vw, 86px) !important;
+  color: var(--arcade-yellow) !important;
+}
+
+body[data-mode="display"][data-phase="NONE"] .brand .subtitle {
+  position: relative;
+  z-index: 2;
+  margin-top: 8px !important;
+  line-height: 1.4;
+}
+
+body[data-mode="display"][data-phase="NONE"] .setup-card {
+  margin-top: 18px;
+}
+
+body[data-mode="display"][data-phase="NONE"] .setup-card::after {
+  top: 12px !important;
+  right: 24px !important;
+  z-index: 4;
+}
+
+@media (max-width: 760px) {
+  body[data-mode="display"][data-phase="NONE"] .brand h1 {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    white-space: normal;
+  }
+  body[data-mode="display"][data-phase="NONE"] .brand h1::before {
+    font-size: clamp(30px, 11vw, 50px) !important;
+  }
+  body[data-mode="display"][data-phase="NONE"] .brand h1::after {
+    font-size: clamp(42px, 15vw, 72px) !important;
+  }
+  body[data-mode="display"][data-phase="NONE"] .setup-card::after {
+    position: static !important;
+    display: block;
+    width: fit-content;
+    margin: -4px 0 16px auto;
+  }
+}
