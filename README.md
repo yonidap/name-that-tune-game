@@ -1,12 +1,14 @@
 # Name That Tune — real-time party game
 
-A two-team music guessing game with one host screen and two captain phones. The host device is connected to the speakers; captain phones remotely play/pause the current snippet. Points decrease as more of the snippet is heard.
+A two-team music guessing game with a dedicated audience/game screen, a host-controller phone, and two captain phones. The game screen is connected to the speakers; captain phones remotely play/pause the current snippet, while only the host phone judges answers and advances the game. Points decrease as more of the snippet is heard.
 
 ## Current MVP
 
 - Two teams with one captain each
+- Dedicated audience/game screen with no admin controls
+- Separate host-controller phone protected by a room PIN
 - Room code + phone join flow
-- Host-only song answer and audio source
+- Song answer visible only to the host controller until reveal
 - Easy / Medium / Hard rounds
 - Short (15), Normal (21), and Full (40) game lengths
 - Remote play/pause from the active captain
@@ -26,7 +28,7 @@ npm install
 npm start
 ```
 
-Open `http://localhost:3000/host` on the computer connected to the speakers. Create a room, then open the displayed `/join/ROOM` URL on each captain phone.
+Open `http://localhost:3000/host` on the computer connected to the speakers. Create a room. The lobby shows a `/control/ROOM` link + PIN for the host phone and a `/join/ROOM` link for both captain phones.
 
 ## Audio files
 
@@ -63,7 +65,7 @@ LOBBY
   → FINISHED
 ```
 
-Only the host receives title, artist, and audio path. Captain clients receive game state without the answer.
+The host-controller phone receives title and artist. The game screen receives only the audio source until reveal, so the audience cannot see the answer early. Captain clients never receive the answer.
 
 ## Transport
 
