@@ -1,0 +1,14 @@
+.game-length-field .native-length-select{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
+.arcade-length-picker{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:6px}
+.arcade-length-card{position:relative;min-height:184px;padding:22px 12px 16px;border:2px solid #343a4d;background:#07090e;color:white;display:grid;justify-items:center;align-content:center;cursor:pointer;clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);transition:transform .13s ease,border-color .13s ease,background .13s ease;box-shadow:none}
+.arcade-length-card:hover{transform:translateY(-3px)}
+.arcade-length-card.selected{border-color:var(--arcade-yellow);background:linear-gradient(180deg,rgba(244,255,56,.11),#07090e);transform:translateY(-4px) rotate(-.6deg);box-shadow:6px 6px 0 rgba(244,255,56,.16)}
+.arcade-length-card .arcade-mode-icon{font-size:28px;line-height:1;color:var(--arcade-cyan)}
+.arcade-length-card.selected .arcade-mode-icon{color:var(--arcade-yellow)}
+.arcade-length-card b{font-family:var(--font-display);font-size:15px;margin-top:8px;text-align:center}
+.arcade-length-card strong{font-family:var(--font-digital);font-size:52px;line-height:.92;color:white}
+.arcade-length-card.selected strong{color:var(--arcade-yellow)}
+.arcade-length-card em{font-family:var(--font-digital);font-style:normal;font-size:8px;letter-spacing:.18em;color:#939ab0}
+.arcade-length-card small{font-family:var(--font-ui);font-size:12px;color:#777f98;margin-top:8px}
+.arcade-pick{position:absolute;right:4px;top:7px;background:var(--arcade-pink);color:white;font-family:var(--font-digital);font-size:7px;letter-spacing:.09em;padding:5px 6px;transform:rotate(3deg)}
+@media(max-width:760px){.arcade-length-picker{grid-template-columns:1fr}.arcade-length-card{min-height:112px;grid-template-columns:auto 1fr auto auto;column-gap:10px;align-items:center;justify-items:start;padding:14px 15px}.arcade-length-card b{margin:0;font-size:14px}.arcade-length-card strong{font-size:36px}.arcade-length-card small{grid-column:2/-1;margin:0}.arcade-pick{right:7px;top:6px}}
