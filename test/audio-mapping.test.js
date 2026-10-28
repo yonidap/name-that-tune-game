@@ -11,7 +11,6 @@ const audioDir = path.join(root, 'public', 'audio');
 const revealDir = path.join(audioDir, 'reveal');
 
 const expectedGameplay = songs.map((song) => path.basename(song.audioFile)).sort();
-const expectedSet = new Set(expectedGameplay);
 
 for (const song of songs) {
   assert.equal(
@@ -34,16 +33,14 @@ assert.deepEqual(
   'Gameplay MP3 files must match the song bank exactly; remove orphan files or fix audioFile mappings.'
 );
 
-if (fs.existsSync(revealDir)) {
-  const revealFiles = fs.readdirSync(revealDir)
-    .filter((name) => name.toLowerCase().endsWith('.mp3'))
-    .sort();
-  const revealOrphans = revealFiles.filter((name) => !expectedSet.has(name));
-  assert.deepEqual(
-    revealOrphans,
-    [],
-    'Every reveal MP3 must use the same filename as an existing gameplay song.'
-  );
-}
+assert.ok(fs.existsSync(revealDir), 'Reveal audio directory is missing.');
+const revealFiles = fs.readdirSync(revealDir)
+  .filter((name) => name.toLowerCase().endsWith('.mp3'))
+  .sort();
+assert.deepEqual(
+  revealFiles,
+  expectedGameplay,
+  'Reveal MP3 files must match the song bank exactly; every song needs one reveal file with the same filename.'
+);
 
-console.log('Audio mapping audit passed');
+console.log(`Audio mapping audit passed: ${expectedGameplay.length} gameplay + ${revealFiles.length} reveal snippets`);
