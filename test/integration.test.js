@@ -6,12 +6,12 @@ process.env.STEAL_MS = '180';
 const { createServer } = await import('../src/server.js');
 
 const ids = new Set(songs.map((song) => song.id));
-assert.equal(songs.length, 40, 'song bank should contain 40 songs');
+assert.equal(songs.length, 44, 'song bank should contain 44 songs');
 assert.equal(ids.size, songs.length, 'song ids must be unique');
 assert.deepEqual(
   Object.fromEntries(['easy','medium','hard'].map((d) => [d, songs.filter((s) => s.difficulty === d).length])),
-  { easy:12, medium:14, hard:14 },
-  'difficulty counts must stay 12/14/14'
+  { easy:14, medium:18, hard:12 },
+  'difficulty counts must stay 14/18/12'
 );
 assert.ok(songs.every((s) => s.duration > 0 && s.audioFile.startsWith('/audio/')), 'every song needs duration and audio path');
 
@@ -43,6 +43,10 @@ const streams = [];
 try {
   const health = await fetch(`${base}/api/health`);
   assert.equal(health.status, 200);
+
+  const fullCreated = await post('/api/display/create', { gameLength:'full', teamNames:{ A:'Full A', B:'Full B' } });
+  assert.equal(fullCreated.status, 200);
+  assert.equal(fullCreated.body.state.totalSongs, 44, 'Full Battle must include all 44 songs');
 
   const created = await post('/api/display/create', { gameLength:'normal', teamNames:{ A:'Alpha', B:'Beta' } });
   assert.equal(created.status, 200);
