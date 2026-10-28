@@ -151,7 +151,7 @@ function renderHome() {
 const GAME_MODES = [
   { value:'short', icon:'⚡', title:'QUICK HIT', songs:'15', note:'Fast & loud' },
   { value:'normal', icon:'♪', title:'MAIN EVENT', songs:'21', note:'Party pick', featured:true },
-  { value:'full', icon:'♛', title:'FULL BATTLE', songs:'40', note:'No mercy' }
+  { value:'full', icon:'♛', title:'FULL BATTLE', songs:'44', note:'No mercy' }
 ];
 function gameModeCards() {
   return `<div class="mode-picker" role="radiogroup" aria-label="Game length">${GAME_MODES.map((item) => `<button type="button" class="mode-card ${item.featured ? 'featured' : ''} ${selectedGameLength === item.value ? 'selected' : ''}" data-mode-value="${item.value}" role="radio" aria-checked="${selectedGameLength === item.value}">
