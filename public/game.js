@@ -102,7 +102,7 @@ function connectEvents() {
 }
 function saveDisplay() { localStorage.setItem('ntt-display', JSON.stringify({ roomCode, displayToken, hostPin })); }
 function saveHost() { localStorage.setItem(`ntt-host-${roomCode}`, JSON.stringify({ roomCode, hostToken })); }
-function saveCaptain() { localStorage.setItem(`ntt-captain-${roomCode}-${team}`, JSON.stringify({ roomCode, team, captainToken })); }
+function saveCaptain() { localStorage.setItem(`ntt-captain-${roomCode}-${team}`, JSON.stringify({ roomCode, team, captainToken })); localStorage.setItem(`ntt-captain-active-${roomCode}`, team); }
 function clearDisplaySession() {
   localStorage.removeItem('ntt-display');
   eventSource?.close();
@@ -527,12 +527,18 @@ async function restoreSession() {
     }
   }
   if (mode === 'captain' && roomFromPath) {
-    for (const t of ['A','B']) {
+    const activeTeam = localStorage.getItem(`ntt-captain-active-${roomFromPath}`);
+    const restoreOrder = ['A','B'].includes(activeTeam) ? [activeTeam, activeTeam === 'A' ? 'B' : 'A'] : ['A','B'];
+    for (const t of restoreOrder) {
       const saved = JSON.parse(localStorage.getItem(`ntt-captain-${roomFromPath}-${t}`) || 'null');
       if (!saved?.captainToken) continue;
       const result = await api('/api/captain/join', saved);
-      if (result?.ok) { roomCode = roomFromPath; team = t; captainToken = saved.captainToken; state = result.state; connectEvents(); render(); return; }
+      if (result?.ok) {
+        roomCode = roomFromPath; team = t; captainToken = result.captainToken || saved.captainToken; state = result.state;
+        saveCaptain(); connectEvents(); render(); return;
+      }
       localStorage.removeItem(`ntt-captain-${roomFromPath}-${t}`);
+      if (activeTeam === t) localStorage.removeItem(`ntt-captain-active-${roomFromPath}`);
     }
   }
   render();

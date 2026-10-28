@@ -7,7 +7,9 @@ let initialEasyRetryTimer = null;
 function captainSession() {
   if (!isCaptainRoute) return null;
   const roomCode = String(routeParts[1]).toUpperCase();
-  for (const team of ['A', 'B']) {
+  const activeTeam = localStorage.getItem(`ntt-captain-active-${roomCode}`);
+  const teams = ['A','B'].includes(activeTeam) ? [activeTeam, activeTeam === 'A' ? 'B' : 'A'] : ['A','B'];
+  for (const team of teams) {
     try {
       const saved = JSON.parse(localStorage.getItem(`ntt-captain-${roomCode}-${team}`) || 'null');
       if (saved?.captainToken) return { roomCode, team, token: saved.captainToken };
@@ -86,6 +88,7 @@ async function reconnectCaptain(button) {
     const result = await response.json().catch(() => ({ ok:false, error:'BAD_RESPONSE' }));
     if (response.ok && result?.ok && result.captainToken) {
       localStorage.setItem(`ntt-captain-${session.roomCode}-${session.team}`, JSON.stringify({ roomCode:session.roomCode, team:session.team, captainToken:result.captainToken }));
+      localStorage.setItem(`ntt-captain-active-${session.roomCode}`, session.team);
       location.reload();
       return;
     }
