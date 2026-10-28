@@ -6,6 +6,21 @@
   <meta name="theme-color" content="#050507" />
   <title>Name That Tune</title>
   <link rel="stylesheet" href="/game.css" />
+  <style>
+    .host-join > .pin-label { display: none; }
+    .host-pin::before {
+      content: "HOST PIN";
+      display: block;
+      margin-bottom: 6px;
+      font-family: var(--font-digital);
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: .09em;
+      color: var(--ink);
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
   <div id="app"></div>
