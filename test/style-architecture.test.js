@@ -15,16 +15,16 @@ for (const legacy of ['qr.css','playback.css','layout-scale.css','viewport.css',
   if (html.includes(legacy)) throw new Error(`index.html still references legacy stylesheet: ${legacy}`);
 }
 
-const requiredContracts = [
-  'overflow-x:hidden',
-  'body[data-mode="display"]{height:100dvh',
-  '.lobby-screen{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto',
-  '.audience-screen{display:flex;flex-direction:column',
-  '.host-join{border-color:var(--pink)',
-  '@media(max-width:860px)'
+const contracts = [
+  { name:'horizontal overflow protection', test:/overflow-x\s*:\s*(?:hidden|clip)/ },
+  { name:'display viewport budget', test:/body\[data-mode=["']display["']\]\s*\{[^}]*height\s*:\s*100dvh/s },
+  { name:'lobby four-row composition', test:/\.lobby-screen\s*\{[^}]*grid-template-rows\s*:\s*auto\s+auto\s+minmax\(0,1fr\)\s+auto/s },
+  { name:'audience flex composition', test:/\.audience-screen\s*\{[^}]*display\s*:\s*flex[^}]*flex-direction\s*:\s*column/s },
+  { name:'host card styling', test:/\.host-join\s*\{[^}]*border-color\s*:\s*var\(--pink\)/s },
+  { name:'mobile breakpoint', test:/@media\s*\(max-width\s*:\s*860px\)/ }
 ];
-for (const contract of requiredContracts) {
-  if (!css.includes(contract)) throw new Error(`Missing frontend layout contract: ${contract}`);
+for (const contract of contracts) {
+  if (!contract.test.test(css)) throw new Error(`Missing frontend layout contract: ${contract.name}`);
 }
 
 console.log('Style architecture audit passed.');
