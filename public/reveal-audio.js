@@ -9,9 +9,11 @@ if (isDisplayRoute) {
   revealAudio.hidden = true;
   document.body.appendChild(revealAudio);
 
+  const REVEAL_FADE_SECONDS = 3;
   let lastRevealFilename = '';
   let revealRetryTimer = null;
   let revealAdvancePending = false;
+  let revealFadeFrame = null;
   let silentUnlockUrl = '';
 
   function createSilentUnlockUrl() {
@@ -61,10 +63,41 @@ if (isDisplayRoute) {
     }
   }
 
+  function stopRevealFade() {
+    if (revealFadeFrame !== null) cancelAnimationFrame(revealFadeFrame);
+    revealFadeFrame = null;
+  }
+
+  function updateRevealFade() {
+    if (revealAudio.paused || revealAudio.ended || document.body.dataset.phase !== 'REVEAL') {
+      stopRevealFade();
+      return;
+    }
+    const duration = Number(revealAudio.duration);
+    const currentTime = Number(revealAudio.currentTime) || 0;
+    if (Number.isFinite(duration) && duration > 0) {
+      const remaining = Math.max(0, duration - currentTime);
+      revealAudio.volume = remaining >= REVEAL_FADE_SECONDS
+        ? 1
+        : Math.max(0, Math.min(1, remaining / REVEAL_FADE_SECONDS));
+    } else {
+      revealAudio.volume = 1;
+    }
+    revealFadeFrame = requestAnimationFrame(updateRevealFade);
+  }
+
+  function startRevealFade() {
+    stopRevealFade();
+    revealAudio.volume = 1;
+    revealFadeFrame = requestAnimationFrame(updateRevealFade);
+  }
+
   function stopRevealAudio({ resetKey = true } = {}) {
     clearTimeout(revealRetryTimer);
     revealRetryTimer = null;
+    stopRevealFade();
     revealAudio.pause();
+    revealAudio.volume = 1;
     try { revealAudio.currentTime = 0; } catch {}
     revealAudio.removeAttribute('src');
     revealAudio.load();
@@ -127,6 +160,7 @@ if (isDisplayRoute) {
         return;
       }
       document.body.dataset.revealAudio = 'playing';
+      startRevealFade();
     }).catch((error) => {
       if (document.body.dataset.phase === 'REVEAL' && lastRevealFilename === filename) {
         document.body.dataset.revealAudio = 'missing';
@@ -147,6 +181,7 @@ if (isDisplayRoute) {
     if (!event.target.closest?.('#enable-audio')) return;
     revealAudio.src = createSilentUnlockUrl();
     revealAudio.currentTime = 0;
+    revealAudio.volume = 1;
     const unlock = revealAudio.play();
     unlock?.then(() => {
       revealAudio.pause();
@@ -157,12 +192,16 @@ if (isDisplayRoute) {
   }, true);
 
   revealAudio.addEventListener('ended', () => {
+    stopRevealFade();
+    revealAudio.volume = 1;
     if (document.body.dataset.phase !== 'REVEAL' || !lastRevealFilename) return;
     document.body.dataset.revealAudio = 'ended';
     advanceAfterReveal(lastRevealFilename);
   });
 
   revealAudio.addEventListener('error', () => {
+    stopRevealFade();
+    revealAudio.volume = 1;
     if (document.body.dataset.phase === 'REVEAL' && lastRevealFilename) {
       document.body.dataset.revealAudio = 'missing';
     }
