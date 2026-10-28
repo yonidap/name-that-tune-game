@@ -15,7 +15,7 @@ const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const GAME_LENGTHS = {
   short: { easy: 5, medium: 5, hard: 5 },
   normal: { easy: 7, medium: 7, hard: 7 },
-  full: { easy: 12, medium: 14, hard: 14 }
+  full: { easy: 14, medium: 18, hard: 12 }
 };
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -40,6 +40,30 @@ function shuffle(input) {
   }
   return arr;
 }
+function spreadArtists(input, priorArtists = []) {
+  const pool = shuffle(input);
+  const arranged = [];
+  const history = [...priorArtists];
+  while (pool.length) {
+    let bestDistance = -1;
+    let bestIndexes = [];
+    for (let i = 0; i < pool.length; i += 1) {
+      const lastIndex = history.lastIndexOf(pool[i].artist);
+      const distance = lastIndex === -1 ? Infinity : history.length - 1 - lastIndex;
+      if (distance > bestDistance) {
+        bestDistance = distance;
+        bestIndexes = [i];
+      } else if (distance === bestDistance) {
+        bestIndexes.push(i);
+      }
+    }
+    const chosenIndex = bestIndexes[Math.floor(Math.random() * bestIndexes.length)];
+    const [chosen] = pool.splice(chosenIndex, 1);
+    arranged.push(chosen);
+    history.push(chosen.artist);
+  }
+  return arranged;
+}
 function scoringFor(duration) {
   const d = duration;
   return [
@@ -50,11 +74,15 @@ function scoringFor(duration) {
 }
 function makePlaylist(lengthKey) {
   const counts = GAME_LENGTHS[lengthKey] || GAME_LENGTHS.normal;
-  return ['easy', 'medium', 'hard'].flatMap((difficulty) =>
-    shuffle(songs.filter((song) => song.difficulty === difficulty))
-      .slice(0, counts[difficulty])
-      .map((song) => ({ ...song, scoring: scoringFor(song.duration) }))
-  );
+  const playlist = [];
+  const artistHistory = [];
+  for (const difficulty of ['easy', 'medium', 'hard']) {
+    const selected = shuffle(songs.filter((song) => song.difficulty === difficulty)).slice(0, counts[difficulty]);
+    const ordered = spreadArtists(selected, artistHistory);
+    playlist.push(...ordered.map((song) => ({ ...song, scoring: scoringFor(song.duration) })));
+    artistHistory.push(...ordered.map((song) => song.artist));
+  }
+  return playlist;
 }
 function currentSong(room) { return room.currentIndex >= 0 ? room.playlist[room.currentIndex] : null; }
 function getPoints(song, totalHeardSeconds) {
