@@ -272,7 +272,13 @@ async function handleApi(req, res, url) {
   if (action === 'host:start') {
     if (room.phase !== 'LOBBY') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
     if (!readyToStart(room)) return json(res, 409, { ok: false, error: 'ROOM_NOT_READY' });
-    snapshot(room); loadSong(room, 0); broadcastState(room); return json(res, 200, { ok: true });
+    snapshot(room);
+    loadSong(room, 0);
+    // Song 1 must be playable immediately after START GAME.
+    // ROUND_INTRO is reserved for later difficulty transitions.
+    if (room.currentIndex === 0 && room.phase === 'ROUND_INTRO') room.phase = 'READY';
+    broadcastState(room);
+    return json(res, 200, { ok: true });
   }
   if (action === 'host:beginRound') {
     if (room.phase !== 'ROUND_INTRO') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });

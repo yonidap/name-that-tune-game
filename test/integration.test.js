@@ -79,13 +79,12 @@ try {
   const start = await post('/api/action', { action:'host:start', roomCode, token:hostToken });
   assert.equal(start.status, 200);
   let state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
-  assert.equal(state.phase, 'ROUND_INTRO');
+  assert.equal(state.phase, 'READY', 'START GAME must make song 1 playable immediately');
   assert.equal(state.currentPoints, 10);
   assert.equal(state.totalHeardSeconds, 0);
   assert.equal(state.activeTeam, 'A');
   const duration = state.song.duration;
 
-  assert.equal((await post('/api/action', { action:'host:beginRound', roomCode, token:hostToken })).status, 200);
   const blindLock = await post('/api/action', { action:'captain:lockAnswer', roomCode, token:tokenA, team:'A' });
   assert.equal(blindLock.status, 409);
   assert.equal(blindLock.body.error, 'HEAR_SOMETHING_FIRST');

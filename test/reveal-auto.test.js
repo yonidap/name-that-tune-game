@@ -53,7 +53,6 @@ try {
 
   await post({ action: 'display:audioReady', roomCode, token: displayToken, ready: true });
   assert.equal((await post({ action: 'host:start', roomCode, token: hostToken })).status, 200);
-  assert.equal((await post({ action: 'host:beginRound', roomCode, token: hostToken })).status, 200);
 
   let displayState = (await api('/api/display/resume', { roomCode, displayToken })).body.state;
   const firstIndex = displayState.currentIndex;

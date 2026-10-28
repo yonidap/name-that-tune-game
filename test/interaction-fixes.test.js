@@ -43,9 +43,9 @@ try {
   streams.push(await connectSse({ room:roomCode, role:'captain', team:'B', token:tokenB }));
   await post('/api/action', { action:'display:audioReady', roomCode, token:displayToken, ready:true });
   await post('/api/action', { action:'host:start', roomCode, token:hostToken });
-  await post('/api/action', { action:'host:beginRound', roomCode, token:hostToken });
 
   let state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'READY', 'START GAME must skip the initial Easy round intro');
   const active = state.activeTeam;
   const activeToken = active === 'A' ? tokenA : tokenB;
   const stealTeam = active === 'A' ? 'B' : 'A';
