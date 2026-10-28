@@ -1,5 +1,6 @@
 name: Fix first round server state
 
+# One-shot workflow: patches the server state machine, runs regression tests, then deletes itself.
 on:
   push:
     paths:
