@@ -9,7 +9,8 @@ if (isDisplayRoute) {
   revealAudio.hidden = true;
   document.body.appendChild(revealAudio);
 
-  const REVEAL_FADE_SECONDS = 3;
+  const REVEAL_FADE_IN_SECONDS = 0.5;
+  const REVEAL_FADE_OUT_SECONDS = 3;
   let lastRevealFilename = '';
   let revealRetryTimer = null;
   let revealAdvancePending = false;
@@ -74,21 +75,19 @@ if (isDisplayRoute) {
       return;
     }
     const duration = Number(revealAudio.duration);
-    const currentTime = Number(revealAudio.currentTime) || 0;
+    const currentTime = Math.max(0, Number(revealAudio.currentTime) || 0);
+    const fadeIn = Math.min(1, currentTime / REVEAL_FADE_IN_SECONDS);
+    let fadeOut = 1;
     if (Number.isFinite(duration) && duration > 0) {
-      const remaining = Math.max(0, duration - currentTime);
-      revealAudio.volume = remaining >= REVEAL_FADE_SECONDS
-        ? 1
-        : Math.max(0, Math.min(1, remaining / REVEAL_FADE_SECONDS));
-    } else {
-      revealAudio.volume = 1;
+      fadeOut = Math.min(1, Math.max(0, duration - currentTime) / REVEAL_FADE_OUT_SECONDS);
     }
+    revealAudio.volume = Math.max(0, Math.min(1, fadeIn, fadeOut));
     revealFadeFrame = requestAnimationFrame(updateRevealFade);
   }
 
   function startRevealFade() {
     stopRevealFade();
-    revealAudio.volume = 1;
+    revealAudio.volume = 0;
     revealFadeFrame = requestAnimationFrame(updateRevealFade);
   }
 
@@ -115,12 +114,7 @@ if (isDisplayRoute) {
       const response = await fetch('/api/action', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          action: 'display:revealEnded',
-          roomCode: saved.roomCode,
-          token: saved.displayToken,
-          filename
-        })
+        body: JSON.stringify({ action: 'display:revealEnded', roomCode: saved.roomCode, token: saved.displayToken, filename })
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
@@ -149,7 +143,7 @@ if (isDisplayRoute) {
 
     revealAudio.src = `/audio/reveal/${encodeURIComponent(filename)}`;
     revealAudio.currentTime = 0;
-    revealAudio.volume = 1;
+    revealAudio.volume = 0;
     document.body.dataset.revealAudio = 'loading';
 
     const playPromise = revealAudio.play();
@@ -170,11 +164,8 @@ if (isDisplayRoute) {
   }
 
   function syncRevealAudio() {
-    if (document.body.dataset.phase === 'REVEAL') {
-      playRevealAudio();
-    } else {
-      stopRevealAudio();
-    }
+    if (document.body.dataset.phase === 'REVEAL') playRevealAudio();
+    else stopRevealAudio();
   }
 
   document.addEventListener('click', (event) => {
@@ -202,9 +193,7 @@ if (isDisplayRoute) {
   revealAudio.addEventListener('error', () => {
     stopRevealFade();
     revealAudio.volume = 1;
-    if (document.body.dataset.phase === 'REVEAL' && lastRevealFilename) {
-      document.body.dataset.revealAudio = 'missing';
-    }
+    if (document.body.dataset.phase === 'REVEAL' && lastRevealFilename) document.body.dataset.revealAudio = 'missing';
   });
 
   const observer = new MutationObserver(syncRevealAudio);
