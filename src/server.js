@@ -222,7 +222,7 @@ async function handleApi(req, res, url) {
     const code = makeRoomCode(); const displayToken = token(); const hostPin = String(1000 + Math.floor(Math.random() * 9000));
     const lengthKey = GAME_LENGTHS[body.gameLength] ? body.gameLength : 'normal'; const now = Date.now();
     const room = {
-      code, displayToken, hostPin, hostToken: null, captainTokens: { A: null, B: null },
+      code, displayToken, hostPin, hostToken: null, captainTokens: { A: null, B: null }, captainClaimedAt: { A: null, B: null },
       teamNames: { A: cleanName(body.teamNames?.A, 'Team A'), B: cleanName(body.teamNames?.B, 'Team B') },
       playlist: makePlaylist(lengthKey), gameLength: lengthKey, phase: 'LOBBY', currentIndex: -1, round: 'easy',
       activeTeam: 'A', turnOwner: 'A', scores: { A: 0, B: 0 }, audioPosition: 0, totalHeardSeconds: 0,
@@ -251,8 +251,14 @@ async function handleApi(req, res, url) {
     const team = body.team;
     if (!['A', 'B'].includes(team)) return json(res, 400, { ok: false, error: 'INVALID_TEAM' });
     if (body.captainToken && room.captainTokens[team] === body.captainToken) return json(res, 200, { ok: true, captainToken: body.captainToken, state: publicState(room, 'captain', team) });
-    if (room.captainTokens[team]) return json(res, 409, { ok: false, error: 'TEAM_TAKEN' });
-    const captainToken = token(); room.captainTokens[team] = captainToken; broadcastState(room);
+    if (room.captainTokens[team]) {
+      const connected = connectionStatus(room)[team];
+      const justClaimed = room.captainClaimedAt?.[team] && Date.now() - room.captainClaimedAt[team] < 3000;
+      if (connected || justClaimed) return json(res, 409, { ok: false, error: 'TEAM_TAKEN' });
+      const captainToken = token(); room.captainTokens[team] = captainToken; room.captainClaimedAt[team] = Date.now(); broadcastState(room);
+      return json(res, 200, { ok: true, reconnected: true, captainToken, state: publicState(room, 'captain', team) });
+    }
+    const captainToken = token(); room.captainTokens[team] = captainToken; room.captainClaimedAt[team] = Date.now(); broadcastState(room);
     return json(res, 200, { ok: true, captainToken, state: publicState(room, 'captain', team) });
   }
 
@@ -274,7 +280,12 @@ async function handleApi(req, res, url) {
   }
   if (action === 'host:releaseCaptain') {
     if (room.phase !== 'LOBBY' || !['A', 'B'].includes(body.team)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
-    closeCaptainClients(room, body.team); room.captainTokens[body.team] = null; broadcastState(room); return json(res, 200, { ok: true });
+    closeCaptainClients(room, body.team); room.captainTokens[body.team] = null; room.captainClaimedAt[body.team] = null; broadcastState(room); return json(res, 200, { ok: true });
+  }
+  if (action === 'host:endGame') {
+    if (['LOBBY', 'FINISHED'].includes(room.phase)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
+    if (room.phase === 'PLAYING') sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });
+    clearStealTimer(room); room.stealDeadline = null; room.phase = 'FINISHED'; room.revealed = true; broadcastState(room); return json(res, 200, { ok: true });
   }
   if (action === 'host:restart') {
     if (room.phase !== 'FINISHED') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
@@ -404,7 +415,11 @@ function handleEvents(req, res, url) {
   const heartbeat = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 15_000);
   req.on('close', () => {
     clearInterval(heartbeat); room.clients.delete(client);
-    if (role === 'display' && !connectionStatus(room).display) { room.audioReady = false; if (room.phase === 'PLAYING') room.phase = 'PAUSED'; }
+    const connected = connectionStatus(room);
+    if (role === 'display' && !connected.display) { room.audioReady = false; if (room.phase === 'PLAYING') room.phase = 'PAUSED'; }
+    if (role === 'captain' && !connected[team] && room.activeTeam === team && room.phase === 'PLAYING') {
+      sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq }); room.phase = 'PAUSED';
+    }
     broadcastState(room);
   });
 }
