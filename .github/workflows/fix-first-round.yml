@@ -52,6 +52,14 @@ jobs:
           if old_start not in s:
               raise SystemExit('Expected interaction start sequence not found')
           p.write_text(s.replace(old_start, new_start, 1))
+
+          p = Path('test/reveal-auto.test.js')
+          s = p.read_text()
+          old = "  assert.equal((await post({ action: 'host:start', roomCode, token: hostToken })).status, 200);\n  assert.equal((await post({ action: 'host:beginRound', roomCode, token: hostToken })).status, 200);\n\n  let displayState"
+          new = "  assert.equal((await post({ action: 'host:start', roomCode, token: hostToken })).status, 200);\n\n  let displayState"
+          if old not in s:
+              raise SystemExit('Expected reveal-auto initial beginRound call not found')
+          p.write_text(s.replace(old, new, 1))
           PY
       - run: npm run check
       - run: npm test
@@ -60,6 +68,6 @@ jobs:
           rm .github/workflows/fix-first-round.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/server.js test/integration.test.js test/interaction-fixes.test.js .github/workflows/fix-first-round.yml
+          git add src/server.js test/integration.test.js test/interaction-fixes.test.js test/reveal-auto.test.js .github/workflows/fix-first-round.yml
           git commit -m "Make first song playable immediately on start"
           git push
