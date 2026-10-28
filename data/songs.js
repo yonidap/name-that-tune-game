@@ -16,7 +16,7 @@ export const songs = [
   { id: 'blue', title: 'Blue (Da Ba Dee)', artist: 'Eiffel 65', difficulty: 'easy', sourceStart: '02:40', duration: 7.03, audioFile: '/audio/blue.mp3' },
 
   // MEDIUM — 18
-  { id: 'superstar', title: 'סופרסטאר', artist: 'רוני דואני', difficulty: 'medium', sourceStart: '', duration: 10.03, audioFile: '/audio/superstar.mp3' },
+  { id: 'adoni', title: 'אדוני', artist: 'רוני דואני', difficulty: 'medium', sourceStart: '', duration: 10.03, audioFile: '/audio/adoni.mp3' },
   { id: 'sweet-dreams', title: 'Sweet Dreams (Are Made of This)', artist: 'Eurythmics', difficulty: 'medium', sourceStart: '00:57', duration: 8.05, audioFile: '/audio/sweet-dreams.mp3' },
   { id: 'judas', title: 'Judas', artist: 'Lady Gaga', difficulty: 'medium', sourceStart: '03:17', duration: 8.05, audioFile: '/audio/judas.mp3' },
   { id: 'lemon-tree', title: 'Lemon Tree', artist: 'Fools Garden', difficulty: 'medium', sourceStart: '00:33', duration: 8.02, audioFile: '/audio/lemon-tree.mp3' },
