@@ -1,131 +1,261 @@
-/* Readability floor for every user-facing view.
-   Loaded after all other styles. If a viewport is tight, geometry is compacted
-   elsewhere; text is never intentionally shrunk below a readable floor. */
+/* Final readability contract.
+   This file is loaded last and intentionally owns all user-facing small text.
+   On the room display we design for distance viewing, not desktop-web norms. */
 
 :root{
-  --readable-body:18px;
-  --readable-support:18px;
-  --readable-label:19px;
-  --readable-room:20px;
+  --type-floor:18px;
+  --type-helper:20px;
+  --type-room-helper:22px;
+  --type-room-label:22px;
+  --type-room-strong:24px;
 }
 
-body{font-size:var(--readable-body)}
-small{font-size:var(--readable-support)!important;line-height:1.35!important}
+body{font-size:var(--type-floor)}
 
-/* Global chrome / helper copy */
-.brand-kicker{font-size:16px!important;line-height:1.2!important}
-.brand p{font-size:18px!important;line-height:1.35!important}
-.live-chip{font-size:16px!important;line-height:1.2!important}
-.home-action small,.inline-error,.back-home{font-size:18px!important;line-height:1.35!important}
+/* ---------- GLOBAL: no tiny user-facing copy anywhere ---------- */
+#app small,
+#app .brand p,
+#app .home-action small,
+#app .inline-error,
+#app .back-home,
+#app .team-input span,
+#app .mode-heading span,
+#app .mode-card em,
+#app .mode-card small,
+#app .connection-strip span,
+#app .judge-status span,
+#app .judge-btn span,
+#app .score-tools summary,
+#app .opponent-line,
+#app .controller-card p,
+#app .controller-meta,
+#app .judge-value,
+#app .waiting-judge{
+  font-size:var(--type-floor)!important;
+  line-height:1.35!important;
+}
 
-/* Setup */
-.setup-ribbon{font-size:16px!important;line-height:1.2!important}
-.team-input span{font-size:18px!important;line-height:1.2!important}
-.mode-heading span{font-size:16px!important;line-height:1.2!important}
-.mode-heading b{font-size:22px!important}
-.mode-card b{font-size:19px!important;line-height:1.2!important}
-.mode-card em{font-size:17px!important;line-height:1.2!important}
-.mode-card small{font-size:18px!important;line-height:1.25!important}
-.mode-pick{font-size:15px!important;line-height:1.15!important}
+#app .brand-kicker,
+#app .live-chip,
+#app .setup-ribbon,
+#app .mode-pick{
+  font-size:18px!important;
+  line-height:1.2!important;
+}
 
-/* Lobby */
-body[data-mode="display"] .lobby-screen .brand p{font-size:18px!important}
-body[data-mode="display"] .lobby-screen .micro-label,
-body[data-mode="display"] .lobby-screen .pin-label{font-size:20px!important;line-height:1.2!important}
-body[data-mode="display"] .lobby-hint{font-size:20px!important;line-height:1.35!important}
-body[data-mode="display"] .lobby-screen .qr-label{font-size:20px!important;line-height:1.2!important}
-body[data-mode="display"] .lobby-screen .qr-fallback{font-size:17px!important;line-height:1.3!important}
-body[data-mode="display"] .lobby-screen .status-row{font-size:20px!important;line-height:1.3!important}
+#app .micro-label,
+#app .team-tag,
+#app .room-mini,
+#app .pin-label,
+#app .heard,
+#app .phase-call{
+  font-size:20px!important;
+  line-height:1.28!important;
+}
+
+#app .mode-card b{font-size:20px!important;line-height:1.2!important}
+#app .mode-heading b{font-size:24px!important;line-height:1.2!important}
+#app .secondary-control,
+#app .dont-know-btn{font-size:19px!important}
+
+/* ---------- ROOM DISPLAY: minimum 22px for helper/label text ---------- */
+body[data-mode="display"] .brand-kicker,
+body[data-mode="display"] .brand p,
+body[data-mode="display"] .setup-ribbon,
+body[data-mode="display"] .team-input span,
+body[data-mode="display"] .mode-heading span,
+body[data-mode="display"] .mode-card em,
+body[data-mode="display"] .mode-card small,
+body[data-mode="display"] .mode-pick,
+body[data-mode="display"] .micro-label,
+body[data-mode="display"] .team-tag,
+body[data-mode="display"] .room-mini,
+body[data-mode="display"] .pin-label,
+body[data-mode="display"] .heard,
+body[data-mode="display"] .phase-call,
+body[data-mode="display"] .round-badge,
+body[data-mode="display"] .turn-banner span,
+body[data-mode="display"] .point-label,
+body[data-mode="display"] .round-splash p{
+  font-size:var(--type-room-label)!important;
+  line-height:1.28!important;
+}
+
+body[data-mode="display"] .lobby-hint,
+body[data-mode="display"] .lobby-screen .qr-label,
+body[data-mode="display"] .lobby-screen .status-row,
 body[data-mode="display"] .lobby-screen .audio-gate,
-body[data-mode="display"] .lobby-screen .audio-gate>div{font-size:19px!important;line-height:1.35!important}
-body[data-mode="display"] .lobby-screen .audio-btn{font-size:20px!important}
+body[data-mode="display"] .lobby-screen .audio-gate>div{
+  font-size:var(--type-room-helper)!important;
+  line-height:1.35!important;
+}
 
-/* Host lobby card: split the card evenly and bring the PIN toward the QR. */
+body[data-mode="display"] .lobby-screen .qr-fallback{
+  font-size:20px!important;
+  line-height:1.3!important;
+}
+
+body[data-mode="display"] .lobby-screen .audio-btn{
+  font-size:22px!important;
+  min-height:52px!important;
+}
+
+body[data-mode="display"] .lobby-screen .micro-label,
+body[data-mode="display"] .lobby-screen .pin-label{
+  font-size:24px!important;
+  line-height:1.18!important;
+}
+
+body[data-mode="display"] .mode-card b{font-size:22px!important}
+body[data-mode="display"] .mode-heading b{font-size:26px!important}
+
+/* ---------- LOBBY: clean host layout, no transforms ---------- */
 body[data-mode="display"] .host-join{
-  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
-  column-gap:clamp(14px,1.5vw,24px)!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1.12fr) minmax(220px,.88fr)!important;
+  grid-template-rows:auto auto minmax(0,1fr) minmax(0,1fr) auto!important;
+  column-gap:clamp(20px,2vw,34px)!important;
+  row-gap:6px!important;
+  align-items:stretch!important;
 }
-body[data-mode="display"] .host-join .pin-label,
-body[data-mode="display"] .host-join .host-pin{
+body[data-mode="display"] .host-join .join-icon{
+  grid-column:1 / -1!important;
+  grid-row:1!important;
+  justify-self:center!important;
+}
+body[data-mode="display"] .host-join>.micro-label{
+  grid-column:1 / -1!important;
+  grid-row:2!important;
+  justify-self:center!important;
+}
+body[data-mode="display"] .host-join .join-url.join-url-qr{
+  grid-column:1!important;
+  grid-row:3 / 5!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  margin:0!important;
+  display:grid!important;
+  place-items:center!important;
+}
+body[data-mode="display"] .host-join .pin-label{
+  grid-column:2!important;
+  grid-row:3!important;
+  align-self:end!important;
   justify-self:start!important;
-  margin-left:clamp(4px,.8vw,14px)!important;
+  margin:0 0 8px 0!important;
+  transform:none!important;
 }
-body[data-mode="display"] .host-join .pin-label{transform:translateY(-48px)!important}
-body[data-mode="display"] .host-join .host-pin{transform:translateY(20px)!important}
+body[data-mode="display"] .host-join .host-pin{
+  grid-column:2!important;
+  grid-row:4!important;
+  align-self:start!important;
+  justify-self:start!important;
+  margin:8px 0 0 0!important;
+  transform:none!important;
+  font-size:clamp(72px,8vh,98px)!important;
+  line-height:.95!important;
+  letter-spacing:.06em!important;
+}
+body[data-mode="display"] .host-join .status-row{
+  grid-column:1 / -1!important;
+  grid-row:5!important;
+  justify-self:center!important;
+}
 
-/* Audience / main game */
-.audience-screen .round-badge,
-.audience-screen .team-tag,
-.audience-screen .room-mini,
-.audience-screen .turn-banner span,
-.audience-screen .value-block .micro-label,
-.audience-screen .point-label,
-.audience-screen .heard,
-.audience-screen .phase-call{font-size:clamp(18px,1.35vw,21px)!important;line-height:1.25!important}
-.audience-screen .round-splash p{font-size:18px!important;line-height:1.35!important}
+/* Captain card: use the available card volume instead of leaving dead space. */
+body[data-mode="display"] .captain-join .join-url.join-url-qr{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  display:grid!important;
+  place-items:center!important;
+}
 
-/* Host / captain controllers */
-.connection-strip span{font-size:17px!important;line-height:1.2!important}
-.controller-card p{font-size:18px!important;line-height:1.4!important}
-.controller-meta,.judge-value,.waiting-judge{font-size:18px!important;line-height:1.35!important}
-.judge-status span{font-size:17px!important;line-height:1.25!important}
-.judge-btn span{font-size:17px!important;line-height:1.2!important}
-.score-tools summary{font-size:17px!important;line-height:1.25!important}
-.opponent-line{font-size:18px!important;line-height:1.3!important}
-.secondary-control,.dont-know-btn{font-size:18px!important}
-.back-home{font-size:17px!important}
+/* ---------- MAIN GAME: readable from across the room ---------- */
+body[data-mode="display"] .audience-screen .round-badge,
+body[data-mode="display"] .audience-screen .team-tag,
+body[data-mode="display"] .audience-screen .room-mini,
+body[data-mode="display"] .audience-screen .turn-banner span,
+body[data-mode="display"] .audience-screen .value-block .micro-label,
+body[data-mode="display"] .audience-screen .point-label,
+body[data-mode="display"] .audience-screen .heard,
+body[data-mode="display"] .audience-screen .phase-call{
+  font-size:clamp(22px,1.45vw,25px)!important;
+  line-height:1.24!important;
+}
 
-/* Standard laptop heights: keep text large; compact only geometry. */
+/* ---------- SHORT ROOM DISPLAYS ----------
+   Never solve height pressure by shrinking type. Remove optional copy / compact geometry. */
 @media(min-width:861px) and (max-height:900px){
-  :root{--readable-body:17px;--readable-support:17px;--readable-label:18px}
-  body[data-mode="display"] .lobby-hint{font-size:18px!important}
-  body[data-mode="display"] .lobby-screen .micro-label,
-  body[data-mode="display"] .lobby-screen .pin-label{font-size:18px!important}
-  body[data-mode="display"] .lobby-screen .qr-label{font-size:18px!important}
-  body[data-mode="display"] .lobby-screen .qr-fallback{font-size:16px!important}
-  body[data-mode="display"] .lobby-screen .status-row{font-size:18px!important}
-  body[data-mode="display"] .lobby-screen .audio-gate,
-  body[data-mode="display"] .lobby-screen .audio-gate>div{font-size:18px!important}
-  body[data-mode="display"] .lobby-screen .audio-btn{font-size:18px!important}
-  .audience-screen .round-badge,
-  .audience-screen .team-tag,
-  .audience-screen .room-mini,
-  .audience-screen .turn-banner span,
-  .audience-screen .value-block .micro-label,
-  .audience-screen .point-label,
-  .audience-screen .heard,
-  .audience-screen .phase-call{font-size:17px!important}
-  body[data-mode="display"] .host-join .pin-label{transform:translateY(-35px)!important}
-  body[data-mode="display"] .host-join .host-pin{transform:translateY(15px)!important}
+  body[data-mode="display"] .lobby-screen .qr-frame img{max-height:17vh!important}
+  body[data-mode="display"] .lobby-screen .join-panel{padding-top:14px!important;padding-bottom:14px!important}
+  body[data-mode="display"] .host-join{grid-template-columns:minmax(0,1.08fr) minmax(190px,.92fr)!important;column-gap:18px!important}
+  body[data-mode="display"] .host-join .host-pin{font-size:64px!important}
 }
 
-/* Very short room displays: remove optional helper lines rather than making them tiny. */
 @media(min-width:861px) and (max-height:720px){
   body[data-mode="display"] .lobby-hint,
   body[data-mode="display"] .lobby-screen .qr-fallback,
   body[data-mode="display"] .lobby-screen .audio-gate>div{display:none!important}
-  body[data-mode="display"] .lobby-screen .status-row{font-size:17px!important}
-  body[data-mode="display"] .lobby-screen .qr-label{font-size:17px!important}
-  body[data-mode="display"] .lobby-screen .micro-label,
-  body[data-mode="display"] .lobby-screen .pin-label{font-size:17px!important}
-  body[data-mode="display"] .lobby-screen .audio-btn{font-size:17px!important}
+  body[data-mode="display"] .lobby-screen .qr-frame img{max-height:14vh!important}
+  body[data-mode="display"] .host-join .host-pin{font-size:56px!important}
 }
 
-/* Phones: readable text wins; use wrapping / fewer columns instead of tiny type. */
+/* ---------- PHONES / TABLETS ----------
+   Still no tiny copy; stack/wrap instead. */
 @media(max-width:860px){
-  :root{--readable-body:17px;--readable-support:16px;--readable-label:17px}
+  :root{--type-floor:17px;--type-helper:17px}
   body{font-size:17px}
-  .brand-kicker,.live-chip,.setup-ribbon,.mode-heading span,.mode-pick{font-size:15px!important}
-  .brand p,.home-action small,.inline-error,.back-home,
-  .team-input span,.mode-card em,.mode-card small,
-  .micro-label,.team-tag,.room-mini,.pin-label,.heard,.phase-call,
-  .judge-status span,.judge-btn span,.score-tools summary,.opponent-line{font-size:16px!important}
-  .mode-card b{font-size:18px!important}
-  .controller-card p,.controller-meta,.judge-value,.waiting-judge{font-size:17px!important}
-  .connection-strip span{font-size:16px!important;line-height:1.15!important;overflow-wrap:anywhere}
-  .secondary-control,.dont-know-btn{font-size:17px!important}
-}
 
-@media(max-width:430px){
+  #app small,
+  #app .brand p,
+  #app .home-action small,
+  #app .inline-error,
+  #app .back-home,
+  #app .team-input span,
+  #app .mode-heading span,
+  #app .mode-card em,
+  #app .mode-card small,
+  #app .connection-strip span,
+  #app .judge-status span,
+  #app .judge-btn span,
+  #app .score-tools summary,
+  #app .opponent-line,
+  #app .controller-card p,
+  #app .controller-meta,
+  #app .judge-value,
+  #app .waiting-judge,
+  #app .micro-label,
+  #app .team-tag,
+  #app .room-mini,
+  #app .pin-label,
+  #app .heard,
+  #app .phase-call{
+    font-size:17px!important;
+    line-height:1.32!important;
+  }
+
+  #app .brand-kicker,
+  #app .live-chip,
+  #app .setup-ribbon,
+  #app .mode-pick{font-size:16px!important}
+
   .connection-strip{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+
+  body[data-mode="display"] .host-join{
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:center!important;
+  }
+  body[data-mode="display"] .host-join .join-url.join-url-qr{
+    width:100%!important;
+    height:auto!important;
+    margin:10px 0!important;
+  }
+  body[data-mode="display"] .host-join .pin-label,
+  body[data-mode="display"] .host-join .host-pin{
+    transform:none!important;
+    margin:4px 0!important;
+    align-self:center!important;
+  }
 }
