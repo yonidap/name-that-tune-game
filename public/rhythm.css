@@ -1,0 +1,112 @@
+/* Unified page rhythm and lobby card alignment.
+   Loaded last so every view shares the same section spacing rule. */
+
+:root{
+  --page-section-gap:clamp(14px,1.65vh,20px);
+}
+
+/* Major page sections use one consistent vertical rhythm. */
+.home-shell,
+body[data-mode="display"] .setup-shell,
+body[data-mode="display"] .lobby-screen,
+body[data-mode="display"] .audience-screen,
+.phone-shell{
+  gap:var(--page-section-gap)!important;
+}
+
+/* Setup: remove one-off margins and let the shared row gap do the work. */
+body[data-mode="display"] .setup-panel{
+  row-gap:var(--page-section-gap);
+}
+body[data-mode="display"] .setup-panel .team-inputs,
+body[data-mode="display"] .setup-panel .mode-heading,
+body[data-mode="display"] .setup-panel .create-room-btn{
+  margin-top:0!important;
+  margin-bottom:0!important;
+}
+
+/* Lobby: exactly the same gap between title, room code, cards and speakers. */
+body[data-mode="display"] .lobby-screen{
+  row-gap:var(--page-section-gap)!important;
+}
+body[data-mode="display"] .lobby-code-block,
+body[data-mode="display"] .lobby-screen .audio-gate{
+  margin:0!important;
+}
+
+/* Keep both lobby cards visually aligned. */
+body[data-mode="display"] .lobby-grid{
+  align-items:stretch!important;
+}
+body[data-mode="display"] .lobby-screen .join-panel{
+  justify-content:flex-start!important;
+  align-items:center!important;
+  text-align:center;
+}
+body[data-mode="display"] .lobby-screen .join-icon,
+body[data-mode="display"] .lobby-screen .micro-label{
+  flex:0 0 auto;
+}
+body[data-mode="display"] .lobby-screen .join-url.join-url-qr{
+  flex:0 0 clamp(164px,22vh,228px)!important;
+  min-height:0!important;
+  width:100%;
+  margin:clamp(8px,1vh,12px) 0!important;
+  display:grid!important;
+  place-items:center!important;
+}
+body[data-mode="display"] .lobby-screen .qr-stack{
+  width:100%;
+  align-content:center;
+}
+
+/* The host card has one extra information block, so compact that footer rather than shifting the QR. */
+body[data-mode="display"] .host-join .pin-label{
+  margin-top:0!important;
+}
+body[data-mode="display"] .host-join .host-pin{
+  margin:clamp(2px,.45vh,5px) 0!important;
+  line-height:.95;
+}
+body[data-mode="display"] .host-join .status-row{
+  margin-top:clamp(5px,.7vh,8px)!important;
+}
+body[data-mode="display"] .captain-join .status-row:first-of-type{
+  margin-top:clamp(6px,.8vh,9px)!important;
+}
+
+/* Main game: header, scoreboard and play area use the same page rhythm. */
+body[data-mode="display"] .audience-screen{
+  gap:var(--page-section-gap)!important;
+}
+
+/* Host / captain pages: keep spacing between major cards consistent too. */
+.phone-shell{
+  gap:var(--page-section-gap)!important;
+}
+.host-game-card,
+.captain-stage,
+.controller-card{
+  margin-top:0;
+  margin-bottom:0;
+}
+
+/* Short displays keep the same rule, only with a smaller shared value. */
+@media(min-width:861px) and (max-height:900px){
+  :root{--page-section-gap:12px}
+  body[data-mode="display"] .lobby-screen .join-url.join-url-qr{
+    flex-basis:clamp(140px,18vh,176px)!important;
+  }
+}
+
+@media(min-width:861px) and (max-height:720px){
+  :root{--page-section-gap:8px}
+  body[data-mode="display"] .lobby-screen .join-url.join-url-qr{
+    flex-basis:clamp(112px,15vh,138px)!important;
+  }
+}
+
+@media(max-width:860px){
+  :root{--page-section-gap:12px}
+  .home-shell,.phone-shell{gap:var(--page-section-gap)!important}
+}
