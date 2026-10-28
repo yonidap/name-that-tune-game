@@ -23,7 +23,12 @@ button,input,select,textarea{max-width:100%;min-width:0}
 .audience-screen .point-label{font-size:14px}
 .audience-screen .heard,.audience-screen .phase-call{font-size:12px}
 
-body[data-mode="display"] #app{height:100dvh;padding:8px 0 10px}
+/* Every main-display state gets a strict viewport budget. */
+body[data-mode="display"]{height:100dvh;max-height:100dvh;overflow:hidden}
+body[data-mode="display"] #app{height:100dvh;max-height:100dvh;min-height:0;padding:8px 0 10px;overflow:hidden}
+body[data-mode="display"] .shell{min-height:0;max-height:100%;overflow:hidden}
+
+/* Live game screen */
 body[data-mode="display"] .audience-screen{height:100%;max-height:100%;display:flex;flex-direction:column;gap:clamp(9px,1.35vh,17px);overflow:hidden}
 body[data-mode="display"] .audience-screen .game-top,
 body[data-mode="display"] .audience-screen .scoreboard,
@@ -40,26 +45,80 @@ body[data-mode="display"] .audience-screen .wave-line{height:clamp(28px,4vh,44px
 body[data-mode="display"] .audience-screen .answer-reveal{min-height:0;height:100%;padding:24px;display:grid;place-content:center}
 body[data-mode="display"] .audience-screen .round-splash{min-height:0;height:100%;padding:30px 20px;display:grid;place-content:center}
 
-body[data-mode="display"] .setup-shell,
-body[data-mode="display"] .lobby-screen{max-width:100%;min-height:0}
-@media(min-width:861px) and (max-height:900px){
-  body[data-mode="display"] .setup-shell .brand h1{font-size:clamp(54px,7vh,78px);margin-top:6px}
-  body[data-mode="display"] .setup-panel{margin-top:0;padding:22px 30px 26px}
-  body[data-mode="display"] .team-inputs{margin-top:28px}
-  body[data-mode="display"] .mode-heading{margin:18px 0 10px}
-  body[data-mode="display"] .mode-card{min-height:150px;padding:16px 10px 12px}
-  body[data-mode="display"] .mode-card strong{font-size:46px}
-  body[data-mode="display"] .create-room-btn{min-height:70px;margin-top:18px}
-  body[data-mode="display"] .lobby-screen{gap:10px}
-  body[data-mode="display"] .lobby-code-block{padding:2px 0}
-  body[data-mode="display"] .lobby-screen .room-code{font-size:80px}
-  body[data-mode="display"] .lobby-grid{gap:14px}
-  body[data-mode="display"] .lobby-screen .join-panel{padding:13px 18px}
-  body[data-mode="display"] .qr-frame img{width:150px}
-  body[data-mode="display"] .lobby-screen .audio-gate{padding:8px}
-  body[data-mode="display"] .lobby-screen .audio-btn{min-height:38px}
+/* Setup screen: title + one flexible setup card that must fit the remaining height. */
+body[data-mode="display"] .setup-shell{height:100%;max-width:100%;display:grid;grid-template-rows:auto minmax(0,1fr);gap:clamp(8px,1.2vh,14px)}
+body[data-mode="display"] .setup-shell .brand{min-height:0}
+body[data-mode="display"] .setup-panel{
+  min-height:0;height:100%;margin-top:0;overflow:hidden;
+  display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;align-content:stretch;
+  padding:clamp(18px,2.5vh,34px) clamp(22px,2.4vw,40px) clamp(18px,2.4vh,34px)
 }
-@media(min-width:861px) and (max-height:760px){
+body[data-mode="display"] .setup-panel .team-inputs{margin-top:clamp(18px,3vh,34px)}
+body[data-mode="display"] .setup-panel .mode-heading{margin:clamp(12px,2vh,24px) 0 clamp(8px,1.2vh,14px)}
+body[data-mode="display"] .setup-panel .mode-picker{min-height:0;height:100%;align-items:stretch}
+body[data-mode="display"] .setup-panel .mode-card{min-height:0;height:100%;padding:clamp(12px,1.8vh,24px) 12px}
+body[data-mode="display"] .setup-panel .create-room-btn{min-height:clamp(62px,8vh,92px);margin-top:clamp(12px,2vh,24px)}
+
+/* Lobby screen: reserve a permanent bottom row for Enable Speakers. */
+body[data-mode="display"] .lobby-screen{
+  height:100%;max-height:100%;max-width:100%;min-height:0;overflow:hidden;
+  display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:clamp(7px,1.15vh,14px)
+}
+body[data-mode="display"] .lobby-screen .brand{min-height:0;padding-top:0}
+body[data-mode="display"] .lobby-screen .brand.compact h1{font-size:clamp(34px,5.2vh,58px);margin:clamp(4px,.8vh,8px) 0 2px}
+body[data-mode="display"] .lobby-screen .brand p{margin-top:4px}
+body[data-mode="display"] .lobby-code-block{padding:0}
+body[data-mode="display"] .lobby-screen .room-code{font-size:clamp(62px,10vh,104px);line-height:.78}
+body[data-mode="display"] .lobby-hint{margin-top:clamp(4px,.8vh,8px)}
+body[data-mode="display"] .lobby-grid{min-height:0;height:100%;gap:clamp(10px,1.4vw,20px);align-items:stretch}
+body[data-mode="display"] .lobby-screen .join-panel{
+  min-height:0;height:100%;overflow:hidden;padding:clamp(12px,1.8vh,22px) clamp(16px,1.8vw,28px);
+  display:flex;flex-direction:column;align-items:flex-start
+}
+body[data-mode="display"] .lobby-screen .join-icon{font-size:clamp(25px,4vh,36px);margin-bottom:clamp(2px,.6vh,6px)}
+body[data-mode="display"] .lobby-screen .join-url.join-url-qr{margin:clamp(5px,.9vh,10px) 0 clamp(6px,1vh,11px);width:100%;flex:1 1 auto;min-height:0;display:grid;place-items:center}
+body[data-mode="display"] .lobby-screen .qr-stack{gap:clamp(4px,.7vh,8px);max-height:100%}
+body[data-mode="display"] .lobby-screen .qr-frame{padding:clamp(5px,.8vh,9px)}
+body[data-mode="display"] .lobby-screen .qr-frame img{width:min(198px,24vw,23vh);max-height:23vh;object-fit:contain}
+body[data-mode="display"] .lobby-screen .qr-label{font-size:clamp(10px,1.5vh,13px)}
+body[data-mode="display"] .lobby-screen .qr-fallback{font-size:clamp(6px,.95vh,8px)}
+body[data-mode="display"] .lobby-screen .status-row{margin-top:clamp(4px,.75vh,8px);font-size:clamp(11px,1.55vh,14px);flex:0 0 auto}
+body[data-mode="display"] .lobby-screen .status-row+.status-row{margin-top:clamp(3px,.55vh,6px)}
+body[data-mode="display"] .lobby-screen .pin-label{margin-top:clamp(3px,.6vh,6px)}
+body[data-mode="display"] .lobby-screen .host-pin{font-size:clamp(34px,5.4vh,48px);margin:clamp(2px,.5vh,5px) 0}
+body[data-mode="display"] .lobby-screen .audio-gate{margin-top:0;padding:clamp(7px,1vh,11px) 10px;font-size:clamp(10px,1.3vh,12px);flex:0 0 auto}
+body[data-mode="display"] .lobby-screen .audio-btn{min-height:clamp(36px,4.8vh,44px);margin-bottom:clamp(4px,.7vh,8px)}
+
+@media(min-width:861px) and (max-height:900px){
+  body[data-mode="display"] #app{padding-top:5px;padding-bottom:7px}
+  body[data-mode="display"] .setup-shell .brand h1{font-size:clamp(46px,6.2vh,66px);margin-top:4px}
+  body[data-mode="display"] .setup-panel{padding:16px 26px 18px}
+  body[data-mode="display"] .setup-panel .team-inputs{margin-top:20px}
+  body[data-mode="display"] .team-input{padding:13px 16px}
+  body[data-mode="display"] .setup-panel .mode-heading{margin:12px 0 7px}
+  body[data-mode="display"] .setup-panel .mode-card{padding:9px 10px}
+  body[data-mode="display"] .mode-card strong{font-size:40px}
+  body[data-mode="display"] .mode-card small{margin-top:3px}
+  body[data-mode="display"] .setup-panel .create-room-btn{min-height:58px;margin-top:10px}
+
+  body[data-mode="display"] .lobby-screen{gap:6px}
+  body[data-mode="display"] .lobby-screen .brand.compact h1{font-size:38px;margin:3px 0 1px}
+  body[data-mode="display"] .lobby-screen .brand p{display:none}
+  body[data-mode="display"] .lobby-screen .room-code{font-size:66px}
+  body[data-mode="display"] .lobby-hint{margin-top:3px;font-size:10px}
+  body[data-mode="display"] .lobby-grid{gap:12px}
+  body[data-mode="display"] .lobby-screen .join-panel{padding:9px 15px}
+  body[data-mode="display"] .lobby-screen .join-icon{font-size:23px;margin-bottom:2px}
+  body[data-mode="display"] .lobby-screen .join-url.join-url-qr{margin:3px 0 4px}
+  body[data-mode="display"] .lobby-screen .qr-frame img{width:min(138px,19vh)}
+  body[data-mode="display"] .lobby-screen .qr-stack{gap:3px}
+  body[data-mode="display"] .lobby-screen .status-row{margin-top:3px;font-size:11px}
+  body[data-mode="display"] .lobby-screen .status-row+.status-row{margin-top:2px}
+  body[data-mode="display"] .lobby-screen .host-pin{font-size:32px;margin:1px 0}
+  body[data-mode="display"] .lobby-screen .pin-label{margin-top:2px}
+  body[data-mode="display"] .lobby-screen .audio-gate{padding:5px 8px;font-size:10px}
+  body[data-mode="display"] .lobby-screen .audio-btn{min-height:32px;margin-bottom:3px}
+
   body[data-mode="display"] .audience-screen{gap:7px}
   body[data-mode="display"] .audience-screen .team-panel{padding:11px 20px}
   body[data-mode="display"] .audience-screen .score{font-size:58px;margin-top:4px}
@@ -69,6 +128,20 @@ body[data-mode="display"] .lobby-screen{max-width:100%;min-height:0}
   body[data-mode="display"] .audience-screen .point-number{font-size:105px}
   body[data-mode="display"] .audience-screen .points{font-size:24px;margin-top:8px}
   body[data-mode="display"] .audience-screen .wave-line{height:25px}
+}
+
+@media(min-width:861px) and (max-height:720px){
+  body[data-mode="display"] .lobby-screen .brand-kicker{display:none}
+  body[data-mode="display"] .lobby-screen .brand.compact h1{font-size:30px;margin:0}
+  body[data-mode="display"] .lobby-screen .room-code{font-size:54px}
+  body[data-mode="display"] .lobby-hint{display:none}
+  body[data-mode="display"] .lobby-screen .qr-frame img{width:min(110px,17vh)}
+  body[data-mode="display"] .lobby-screen .qr-label{font-size:9px}
+  body[data-mode="display"] .lobby-screen .qr-fallback{display:none}
+  body[data-mode="display"] .lobby-screen .join-panel{padding:6px 12px}
+  body[data-mode="display"] .lobby-screen .status-row{font-size:10px}
+  body[data-mode="display"] .lobby-screen .audio-gate>div{display:none}
+  body[data-mode="display"] .lobby-screen .audio-btn{margin-bottom:0}
 }
 
 .dont-know-btn{width:100%;min-height:58px;border:2px solid #555b70;background:#0d1018;color:#d8dbe6;font-family:var(--font-display);font-size:16px;letter-spacing:.02em;clip-path:polygon(13px 0,100% 0,calc(100% - 13px) 100%,0 100%)}
