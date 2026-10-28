@@ -10,8 +10,8 @@ if (isDisplayRoute) {
   document.body.appendChild(revealAudio);
 
   let lastRevealFilename = '';
-  let revealStopTimer = null;
   let revealRetryTimer = null;
+  let revealAdvancePending = false;
   let silentUnlockUrl = '';
 
   function createSilentUnlockUrl() {
@@ -51,17 +51,53 @@ if (isDisplayRoute) {
     }
   }
 
+  function displaySession() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('ntt-display') || 'null');
+      if (!saved?.roomCode || !saved?.displayToken) return null;
+      return saved;
+    } catch {
+      return null;
+    }
+  }
+
   function stopRevealAudio({ resetKey = true } = {}) {
-    clearTimeout(revealStopTimer);
     clearTimeout(revealRetryTimer);
-    revealStopTimer = null;
     revealRetryTimer = null;
     revealAudio.pause();
     try { revealAudio.currentTime = 0; } catch {}
     revealAudio.removeAttribute('src');
     revealAudio.load();
     document.body.dataset.revealAudio = 'idle';
+    revealAdvancePending = false;
     if (resetKey) lastRevealFilename = '';
+  }
+
+  async function advanceAfterReveal(filename) {
+    if (revealAdvancePending || document.body.dataset.phase !== 'REVEAL' || !filename) return;
+    const saved = displaySession();
+    if (!saved) return;
+    revealAdvancePending = true;
+    try {
+      const response = await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'display:revealEnded',
+          roomCode: saved.roomCode,
+          token: saved.displayToken,
+          filename
+        })
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        revealAdvancePending = false;
+        console.warn('Could not auto-advance after reveal audio.', result);
+      }
+    } catch (error) {
+      revealAdvancePending = false;
+      console.warn('Could not auto-advance after reveal audio.', error);
+    }
   }
 
   function playRevealAudio(attempt = 0) {
@@ -74,13 +110,9 @@ if (isDisplayRoute) {
     if (lastRevealFilename === filename) return;
 
     lastRevealFilename = filename;
-    clearTimeout(revealStopTimer);
+    revealAdvancePending = false;
     clearTimeout(revealRetryTimer);
     revealRetryTimer = null;
-
-    const gameplayDuration = gameAudio && Number.isFinite(gameAudio.duration) && gameAudio.duration > 0
-      ? gameAudio.duration
-      : 0;
 
     revealAudio.src = `/audio/reveal/${encodeURIComponent(filename)}`;
     revealAudio.currentTime = 0;
@@ -95,17 +127,11 @@ if (isDisplayRoute) {
         return;
       }
       document.body.dataset.revealAudio = 'playing';
-      if (gameplayDuration > 0) {
-        revealStopTimer = setTimeout(() => {
-          if (document.body.dataset.phase === 'REVEAL' && lastRevealFilename === filename) {
-            revealAudio.pause();
-            document.body.dataset.revealAudio = 'ended';
-          }
-        }, gameplayDuration * 1000 + 50);
-      }
     }).catch((error) => {
-      document.body.dataset.revealAudio = 'missing';
-      console.warn(`Reveal audio unavailable: /audio/reveal/${filename}`, error);
+      if (document.body.dataset.phase === 'REVEAL' && lastRevealFilename === filename) {
+        document.body.dataset.revealAudio = 'missing';
+        console.warn(`Reveal audio unavailable: /audio/reveal/${filename}`, error);
+      }
     });
   }
 
@@ -131,9 +157,15 @@ if (isDisplayRoute) {
   }, true);
 
   revealAudio.addEventListener('ended', () => {
-    clearTimeout(revealStopTimer);
-    revealStopTimer = null;
-    if (document.body.dataset.phase === 'REVEAL') document.body.dataset.revealAudio = 'ended';
+    if (document.body.dataset.phase !== 'REVEAL' || !lastRevealFilename) return;
+    document.body.dataset.revealAudio = 'ended';
+    advanceAfterReveal(lastRevealFilename);
+  });
+
+  revealAudio.addEventListener('error', () => {
+    if (document.body.dataset.phase === 'REVEAL' && lastRevealFilename) {
+      document.body.dataset.revealAudio = 'missing';
+    }
   });
 
   const observer = new MutationObserver(syncRevealAudio);
