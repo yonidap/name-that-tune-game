@@ -431,6 +431,16 @@ async function handleApi(req, res, url) {
     room.phase = 'PAUSED';
     broadcastState(room); return json(res, 200, { ok: true });
   }
+  if (action === 'display:revealEnded') {
+    if (room.phase !== 'REVEAL') return json(res, 200, { ok:true, ignored:true });
+    const song = currentSong(room);
+    const expectedFilename = song?.audioFile ? path.basename(song.audioFile) : '';
+    if (!song || (body.filename && String(body.filename) !== expectedFilename)) return json(res, 200, { ok:true, ignored:true });
+    snapshot(room);
+    loadSong(room, room.currentIndex + 1);
+    broadcastState(room);
+    return json(res, 200, { ok:true });
+  }
   if (action === 'captain:lockAnswer') {
     if (room.activeTeam !== body.team || !['READY', 'PAUSED'].includes(room.phase)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
     if (room.totalHeardSeconds < 0.05) return json(res, 409, { ok: false, error: 'HEAR_SOMETHING_FIRST' });
