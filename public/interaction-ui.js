@@ -1,6 +1,8 @@
 const routeParts = location.pathname.split('/').filter(Boolean);
 const isCaptainRoute = routeParts[0] === 'join' && routeParts[1];
 const isHostRoute = routeParts[0] === 'control' && routeParts[1];
+let initialEasyAdvanceInFlight = false;
+let initialEasyRetryTimer = null;
 
 function captainSession() {
   if (!isCaptainRoute) return null;
@@ -29,8 +31,8 @@ async function sendAction(session, action, extra = {}) {
   try {
     const response = await fetch('/api/action', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action, roomCode: session.roomCode, token: session.token, ...(session.team ? { team:session.team } : {}), ...extra })
+      headers: { 'content-type':'application/json' },
+      body: JSON.stringify({ action, roomCode:session.roomCode, token:session.token, ...(session.team ? { team:session.team } : {}), ...extra })
     });
     const result = await response.json().catch(() => ({ ok:false, error:'BAD_RESPONSE' }));
     return { ...result, ok:Boolean(response.ok && result?.ok) };
@@ -68,6 +70,34 @@ function makeDontKnowButton(id, disabled) {
   return button;
 }
 
+async function reconnectCaptain(button) {
+  const session = captainSession();
+  if (!session) {
+    location.reload();
+    return;
+  }
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch('/api/captain/join', {
+      method:'POST',
+      headers:{ 'content-type':'application/json' },
+      body:JSON.stringify({ roomCode:session.roomCode, team:session.team, captainToken:session.token })
+    });
+    const result = await response.json().catch(() => ({ ok:false, error:'BAD_RESPONSE' }));
+    if (response.ok && result?.ok && result.captainToken) {
+      localStorage.setItem(`ntt-captain-${session.roomCode}-${session.team}`, JSON.stringify({ roomCode:session.roomCode, team:session.team, captainToken:result.captainToken }));
+      location.reload();
+      return;
+    }
+    if (button?.isConnected) button.disabled = false;
+    if (result?.error === 'TEAM_TAKEN') alert('That team is already connected from another phone.');
+    else alert('Could not reconnect. Check the connection and try again.');
+  } catch {
+    if (button?.isConnected) button.disabled = false;
+    alert('Could not reconnect. Check the connection and try again.');
+  }
+}
+
 function makeReconnectButton() {
   const button = document.createElement('button');
   button.id = 'captain-reconnect';
@@ -78,7 +108,7 @@ function makeReconnectButton() {
   button.style.minHeight = '58px';
   button.style.borderColor = 'var(--cyan)';
   button.style.color = 'var(--cyan)';
-  button.addEventListener('click', () => location.reload());
+  button.addEventListener('click', () => reconnectCaptain(button));
   return button;
 }
 
@@ -136,6 +166,25 @@ function syncCaptainControls() {
   if (!offline && reconnect) reconnect.remove();
 }
 
+async function ensureInitialEasyReady() {
+  if (!isHostRoute) return;
+  const phase = document.body.dataset.phase || '';
+  const round = document.body.dataset.round || '';
+  if (phase !== 'ROUND_INTRO' || round !== 'easy') {
+    initialEasyAdvanceInFlight = false;
+    clearTimeout(initialEasyRetryTimer);
+    initialEasyRetryTimer = null;
+    return;
+  }
+  if (initialEasyAdvanceInFlight) return;
+  initialEasyAdvanceInFlight = true;
+  const result = await sendHostAction('host:beginRound');
+  initialEasyAdvanceInFlight = false;
+  if (result?.ok || result?.error === 'NOT_ALLOWED') return;
+  clearTimeout(initialEasyRetryTimer);
+  initialEasyRetryTimer = setTimeout(() => ensureInitialEasyReady(), 500);
+}
+
 function syncHostControls() {
   if (!isHostRoute) return;
   const phase = document.body.dataset.phase || '';
@@ -144,31 +193,7 @@ function syncHostControls() {
   const shell = document.querySelector('.controller-shell');
   if (activeGame && shell && !existing) shell.appendChild(makeEndGameButton());
   if (!activeGame && existing) existing.remove();
-}
-
-if (isHostRoute) {
-  document.addEventListener('click', async (event) => {
-    const startButton = event.target.closest?.('#host-start');
-    if (!startButton) return;
-
-    // START GAME should make song 1 playable immediately. The server still keeps
-    // ROUND_INTRO for later difficulty transitions, but the first Easy intro is
-    // advanced automatically here in the same host action.
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (startButton.disabled) return;
-    startButton.disabled = true;
-
-    const started = await sendHostAction('host:start');
-    if (!started.ok) {
-      if (startButton.isConnected) startButton.disabled = false;
-      alert('Could not start the game.');
-      return;
-    }
-
-    const begun = await sendHostAction('host:beginRound');
-    if (!begun.ok && begun.error !== 'NOT_ALLOWED') alert('The game started, but the first round could not be opened automatically.');
-  }, true);
+  ensureInitialEasyReady();
 }
 
 if (isCaptainRoute || isHostRoute) {
@@ -177,7 +202,10 @@ if (isCaptainRoute || isHostRoute) {
     syncHostControls();
   };
   const observer = new MutationObserver(syncControls);
-  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-phase', 'data-connection', 'disabled'] });
+  observer.observe(document.documentElement, { subtree:true, childList:true, attributes:true, attributeFilter:['data-phase','data-round','data-connection','disabled'] });
   syncControls();
-  window.addEventListener('beforeunload', () => observer.disconnect());
+  window.addEventListener('beforeunload', () => {
+    observer.disconnect();
+    clearTimeout(initialEasyRetryTimer);
+  });
 }
