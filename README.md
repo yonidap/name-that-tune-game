@@ -52,14 +52,11 @@ When the active team locks an answer, the host marks it correct or wrong.
 
 - Server-side state is authoritative for phase, score, playback count, timing, and permissions.
 - Stale audio progress events are ignored with a per-playback sequence number.
-- Pending browser playback commands and stale audio loads are cancelled when the game leaves `PLAYING` or changes songs, preventing a delayed `PLAY` from restarting after `STOP` / `REVEAL`.
 - If the main game screen disconnects during playback, the room fails safe to `PAUSED` and audio readiness is revoked.
 - After a display refresh, the display session is validated before restoration and speakers must be enabled again.
-- Host and captain phones can reconnect using their saved tokens; recovery requests have finite network timeouts.
-- Reveal auto-advance has a finite request timeout and bounded retry path; the host can still use `NEXT` manually.
+- Host and captain phones can reconnect using their saved tokens.
 - The host can reset a stuck captain slot during the lobby or an active game; an active playback is paused before that slot is released.
-- `UNDO` restores the previous meaningful game state. Manual `END GAME` creates its own snapshot, so undoing from the final screen returns to the immediately preceding safe state.
-- The host keeps `UNDO` and score-correction controls on the final-score screen.
+- `UNDO` restores the previous meaningful game state. For example, undo immediately after `LOCK ANSWER` returns to the paused decision state instead of jumping to an earlier song.
 - `PLAY AGAIN` starts a fresh shuffled game with the same room/controllers and clears the old score/history.
 - The main display also offers `NEW ROOM` after the game ends.
 
@@ -111,6 +108,7 @@ CI runs both commands on every push and pull request. The integration test exerc
 - captain-slot reset;
 - manual end-game undo;
 - client audio-race guards and final-score recovery controls;
+- full process-restart recovery from a persisted mid-game checkpoint;
 - the 44-song bank and 14/18/12 difficulty split.
 
 ## State machine
@@ -138,6 +136,7 @@ The app intentionally stays small:
 - Server-Sent Events (SSE) — real-time server-to-client state and audio commands.
 - `data/songs.js` — song metadata and snippet durations.
 - `test/integration.test.js` — end-to-end state-machine audit.
+- `test/durability.test.js` — process-restart persistence audit.
 
 There is one authoritative game server; the supplemental browser scripts do not own game state.
 
@@ -151,7 +150,7 @@ Without durable storage, a provider-level restart can still erase in-memory room
 
 ## Production limitations
 
-The current MVP stores rooms **in the Node process memory**. A Render restart, redeploy, or process crash will erase active rooms. This is acceptable for development and a single party session, but it is the main remaining architectural limitation. Do not deploy changes during an active game. A future hardened version should persist room snapshots in Redis/Postgres.
+By default, rooms live in Node memory. For the party deployment, durable restart protection requires `GAME_STATE_FILE` to point at persistent storage. A paid Render web service can attach a Persistent Disk; a Free web service cannot. Do not deploy code during an active game, because even with durable state a deploy causes a brief service interruption.
 
 The QR generator and Google Fonts are loaded from external CDNs. If the QR library cannot load, the room code/manual join path still works; if the fonts fail, browser fallback fonts are used.
 
