@@ -159,17 +159,20 @@ function syncCaptainControls() {
   if (!isCaptainRoute) return;
   const phase = document.body.dataset.phase || '';
   const normalLock = document.querySelector('#lock-answer');
-  if (normalLock && !document.querySelector('#dont-know')) {
+  const dontKnow = document.querySelector('#dont-know');
+  if (normalLock && !dontKnow) {
     normalLock.insertAdjacentElement('afterend', makeDontKnowButton('dont-know', normalLock.disabled));
-  } else if (normalLock) {
-    document.querySelector('#dont-know').disabled = normalLock.disabled;
+  } else if (normalLock && dontKnow && dontKnow.disabled !== normalLock.disabled) {
+    dontKnow.disabled = normalLock.disabled;
   }
 
   const stealLock = document.querySelector('#lock-steal');
-  if (stealLock && !document.querySelector('#dont-know-steal')) {
-    stealLock.insertAdjacentElement('afterend', makeDontKnowButton('dont-know-steal', phase !== 'STEAL'));
-  } else if (stealLock) {
-    document.querySelector('#dont-know-steal').disabled = phase !== 'STEAL';
+  const dontKnowSteal = document.querySelector('#dont-know-steal');
+  const stealDisabled = phase !== 'STEAL';
+  if (stealLock && !dontKnowSteal) {
+    stealLock.insertAdjacentElement('afterend', makeDontKnowButton('dont-know-steal', stealDisabled));
+  } else if (stealLock && dontKnowSteal && dontKnowSteal.disabled !== stealDisabled) {
+    dontKnowSteal.disabled = stealDisabled;
   }
 
   if (phase === 'STEAL_LOCKED') {
@@ -186,7 +189,6 @@ function syncCaptainControls() {
   if (offline && shell && !reconnect) shell.appendChild(makeReconnectButton());
   if (!offline && reconnect) reconnect.remove();
 }
-
 
 function syncHostControls() {
   if (!isHostRoute) return;
@@ -207,7 +209,10 @@ if (isCaptainRoute || isHostRoute) {
     syncHostControls();
   };
   const observer = new MutationObserver(syncControls);
-  observer.observe(document.documentElement, { subtree:true, childList:true, attributes:true, attributeFilter:['data-phase','data-round','data-connection','disabled'] });
+  // Do not observe `disabled`: syncCaptainControls itself may change button.disabled.
+  // Watching that attribute can create a self-triggering microtask loop that starves
+  // rendering and the captain polling heartbeat as soon as the active-turn buttons appear.
+  observer.observe(document.documentElement, { subtree:true, childList:true, attributes:true, attributeFilter:['data-phase','data-round','data-connection'] });
   syncControls();
   window.addEventListener('beforeunload', () => {
     observer.disconnect();
