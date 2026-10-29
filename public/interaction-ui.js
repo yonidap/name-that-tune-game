@@ -82,11 +82,14 @@ async function reconnectCaptain(button) {
     return;
   }
   if (button) button.disabled = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
     const response = await fetch('/api/captain/join', {
       method:'POST',
       headers:{ 'content-type':'application/json' },
-      body:JSON.stringify({ roomCode:session.roomCode, team:session.team, captainToken:session.token })
+      body:JSON.stringify({ roomCode:session.roomCode, team:session.team, captainToken:session.token }),
+      signal:controller.signal
     });
     const result = await response.json().catch(() => ({ ok:false, error:'BAD_RESPONSE' }));
     if (response.ok && result?.ok && result.captainToken) {
@@ -101,6 +104,8 @@ async function reconnectCaptain(button) {
   } catch {
     if (button?.isConnected) button.disabled = false;
     alert('Could not reconnect. Check the connection and try again.');
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

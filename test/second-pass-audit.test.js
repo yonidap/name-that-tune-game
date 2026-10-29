@@ -3,6 +3,8 @@ import fs from 'node:fs';
 
 const game = fs.readFileSync('public/game.js', 'utf8');
 const interaction = fs.readFileSync('public/interaction-ui.js', 'utf8');
+const reveal = fs.readFileSync('public/reveal-audio.js', 'utf8');
+const server = fs.readFileSync('src/server.js', 'utf8');
 const readme = fs.readFileSync('README.md', 'utf8');
 
 assert.match(game, /let audioLoadGeneration = 0;/, 'audio loads need a generation guard');
@@ -14,6 +16,10 @@ assert.match(game, /new AbortController\(\)/, 'main API requests need a finite t
 assert.match(interaction, /id = 'final-host-tools'/, 'host needs recovery controls after the final reveal');
 assert.match(interaction, /host:adjustScore/, 'final score must remain correctable');
 assert.match(interaction, /host:undo/, 'final state must expose undo');
+assert.match(interaction, /signal:controller\.signal/, 'captain recovery requests need a finite timeout');
+assert.match(reveal, /advanceAfterReveal\(filename, attempt = 0\)/, 'reveal auto-advance must support bounded retries');
+assert.match(reveal, /signal: controller\.signal/, 'reveal auto-advance must have a finite timeout');
+assert.match(server, /host:endGame[\s\S]*?snapshot\(room\)/, 'manual end game must snapshot before finishing so final undo is exact');
 assert.match(readme, /Full Battle \(44\)/, 'docs must match the 44-song full game');
 assert.doesNotMatch(readme, /Full Battle \(40/, 'stale 40-song documentation must not return');
 

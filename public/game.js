@@ -628,7 +628,6 @@ async function restoreSession() {
       const savedTeams = ['A','B']
         .map((t) => ({ team:t, saved:readStoredJson(`ntt-captain-${roomFromPath}-${t}`) }))
         .filter((entry) => entry.saved?.captainToken);
-      const restoreOrder = ['A','B'].includes(activeTeam) ? [activeTeam] : savedTeams.map((entry) => entry.team);
       let candidate = null;
       if (['A','B'].includes(activeTeam)) {
         candidate = savedTeams.find((entry) => entry.team === activeTeam) || null;

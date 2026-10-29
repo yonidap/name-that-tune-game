@@ -298,6 +298,7 @@ async function handleApi(req, res, url) {
   }
   if (action === 'host:endGame') {
     if (['LOBBY', 'FINISHED'].includes(room.phase)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
+    snapshot(room);
     if (room.phase === 'PLAYING') sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });
     clearStealTimer(room); room.stealDeadline = null; room.phase = 'FINISHED'; room.revealed = true; broadcastState(room); return json(res, 200, { ok: true });
   }

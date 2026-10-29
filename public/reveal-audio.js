@@ -14,6 +14,7 @@ if (isDisplayRoute) {
   let lastRevealFilename = '';
   let revealRetryTimer = null;
   let revealAdvancePending = false;
+  let revealAdvanceRetryTimer = null;
   let revealFadeFrame = null;
   let silentUnlockUrl = '';
 
@@ -94,6 +95,8 @@ if (isDisplayRoute) {
   function stopRevealAudio({ resetKey = true } = {}) {
     clearTimeout(revealRetryTimer);
     revealRetryTimer = null;
+    clearTimeout(revealAdvanceRetryTimer);
+    revealAdvanceRetryTimer = null;
     stopRevealFade();
     revealAudio.pause();
     revealAudio.volume = 1;
@@ -105,25 +108,38 @@ if (isDisplayRoute) {
     if (resetKey) lastRevealFilename = '';
   }
 
-  async function advanceAfterReveal(filename) {
+  async function advanceAfterReveal(filename, attempt = 0) {
     if (revealAdvancePending || document.body.dataset.phase !== 'REVEAL' || !filename) return;
     const saved = displaySession();
     if (!saved) return;
     revealAdvancePending = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    let failed = false;
     try {
       const response = await fetch('/api/action', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'display:revealEnded', roomCode: saved.roomCode, token: saved.displayToken, filename })
+        body: JSON.stringify({ action: 'display:revealEnded', roomCode: saved.roomCode, token: saved.displayToken, filename }),
+        signal: controller.signal
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
-        revealAdvancePending = false;
+        failed = true;
         console.warn('Could not auto-advance after reveal audio.', result);
       }
     } catch (error) {
-      revealAdvancePending = false;
+      failed = true;
       console.warn('Could not auto-advance after reveal audio.', error);
+    } finally {
+      clearTimeout(timeout);
+      if (failed) {
+        revealAdvancePending = false;
+        if (attempt < 2 && document.body.dataset.phase === 'REVEAL' && lastRevealFilename === filename) {
+          clearTimeout(revealAdvanceRetryTimer);
+          revealAdvanceRetryTimer = setTimeout(() => advanceAfterReveal(filename, attempt + 1), 700 * (attempt + 1));
+        }
+      }
     }
   }
 

@@ -153,6 +153,15 @@ try {
   assert.equal(state.phase, 'READY');
   assert.deepEqual(state.scores, { A: 0, B: 0 });
 
+  // Manual END GAME is itself undoable and returns to the immediately preceding safe state.
+  assert.equal((await post('/api/action', { action: 'host:endGame', roomCode, token: hostToken })).status, 200);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'FINISHED');
+  assert.equal((await post('/api/action', { action: 'host:undo', roomCode, token: hostToken })).status, 200);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'READY');
+  assert.equal(state.currentIndex, 0);
+
   // Host can explicitly free a captain slot during the live game for a replacement phone.
   assert.equal((await post('/api/action', { action: 'host:releaseCaptain', roomCode, token: hostToken, team: 'A' })).status, 200);
   const replacementA = await post('/api/captain/join', { roomCode, team: 'A' });
