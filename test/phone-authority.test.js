@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import { createServer } from '../src/server.js';
 
 const server = createServer();
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
+let displayStream = null;
 
 async function post(route, body) {
   const response = await fetch(base + route, {
@@ -15,10 +17,25 @@ async function post(route, body) {
   return { status:response.status, body:await response.json() };
 }
 
+function connectDisplaySse(roomCode, displayToken) {
+  return new Promise((resolve, reject) => {
+    const params = new URLSearchParams({ room:roomCode, role:'display', token:displayToken });
+    const req = http.get(`${base}/events?${params}`, (res) => {
+      if (res.statusCode !== 200) return reject(new Error(`Display SSE failed: ${res.statusCode}`));
+      res.on('data', () => {});
+      res.once('data', () => resolve(req));
+    });
+    req.on('error', reject);
+  });
+}
+
 try {
   const created = await post('/api/display/create', { gameLength:'short' });
   assert.equal(created.status, 200);
   const { roomCode, displayToken, hostPin } = created.body;
+
+  // The display remains realtime because audio commands must be fail-safe and immediate.
+  displayStream = await connectDisplaySse(roomCode, displayToken);
 
   const host = await post('/api/host/join', { roomCode, hostPin });
   const a = await post('/api/captain/join', { roomCode, team:'A' });
@@ -27,11 +44,10 @@ try {
   assert.equal(a.status, 200);
   assert.equal(b.status, 200);
 
-  // No host/captain SSE connections are created here. Presence must be maintained by authenticated HTTP state polling.
+  // No host/captain SSE connections are created here. Their presence is maintained by authenticated HTTP polling.
   assert.equal((await post('/api/state', { roomCode, role:'host', token:host.body.hostToken })).status, 200);
   assert.equal((await post('/api/state', { roomCode, role:'captain', team:'A', token:a.body.captainToken })).status, 200);
   assert.equal((await post('/api/state', { roomCode, role:'captain', team:'B', token:b.body.captainToken })).status, 200);
-  assert.equal((await post('/api/state', { roomCode, role:'display', token:displayToken })).status, 200);
 
   await post('/api/action', { action:'display:audioReady', roomCode, token:displayToken, ready:true });
   const start = await post('/api/action', { action:'host:start', roomCode, token:host.body.hostToken });
@@ -54,5 +70,6 @@ try {
   assert.match(client, /mode === 'display' \? 1500 : 750/, 'phone polling cadence must be sub-second');
   console.log('Phone authoritative-state audit passed');
 } finally {
+  try { displayStream?.destroy(); } catch {}
   await new Promise((resolve) => server.close(resolve));
 }
