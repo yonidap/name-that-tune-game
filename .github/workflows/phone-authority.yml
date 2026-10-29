@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/phone-authority-patch.mjs'
+      - 'scripts/phone-authority-fixup.mjs'
       - 'test/phone-authority.test.js'
       - '.github/workflows/phone-authority.yml'
 
@@ -22,7 +23,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply phone authoritative-state patch
-        run: node scripts/phone-authority-patch.mjs
+        run: |
+          node scripts/phone-authority-patch.mjs
+          node scripts/phone-authority-fixup.mjs
       - name: Syntax audit
         run: npm run check
       - name: Full test suite
@@ -30,11 +33,10 @@ jobs:
       - name: Commit clean implementation
         run: |
           rm -f scripts/phone-authority-patch.mjs
+          rm -f scripts/phone-authority-fixup.mjs
           rm -f .github/workflows/phone-authority.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Make phone state polling authoritative" || exit 0
           git push origin HEAD:main
-
-# trigger validation after workflow creation
