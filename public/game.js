@@ -29,6 +29,7 @@ let audioLoadGeneration = 0;
 let playbackCommandGeneration = 0;
 let statePollTimer = null;
 let statePollInFlight = false;
+let lastAppliedRevision = -1;
 
 function esc(value = '') {
   return String(value).replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -88,6 +89,9 @@ function canPatchLive(previous, next) {
 }
 function applyAuthoritativeState(next) {
   if (!next) return;
+  const nextRevision = Number(next.revision ?? -1);
+  const currentRevision = Number(state?.revision ?? lastAppliedRevision ?? -1);
+  if (state && next.roomCode === state.roomCode && nextRevision >= 0 && currentRevision >= 0 && nextRevision < currentRevision) return;
   const previous = state;
   if (mode === 'display' && previous) {
     const leftPlayback = next.phase !== 'PLAYING' && (previous.phase === 'PLAYING' || activePlaybackSeq);
@@ -101,7 +105,10 @@ function applyAuthoritativeState(next) {
   }
   const patch = canPatchLive(previous, next);
   state = next;
+  if (nextRevision >= 0) lastAppliedRevision = Math.max(lastAppliedRevision, nextRevision);
   roomCode = state.roomCode;
+  document.body.dataset.build = state.buildId || '';
+  document.body.dataset.instance = state.instanceId || '';
   if (patch) updateLiveUi(); else render();
 }
 function stateSessionPayload() {
@@ -115,7 +122,12 @@ async function pollAuthoritativeState() {
   statePollInFlight = true;
   try {
     const result = await api('/api/state', payload);
-    if (result?.ok && result.state) applyAuthoritativeState(result.state);
+    if (result?.ok && result.state) {
+      document.body.dataset.connection = 'online';
+      applyAuthoritativeState(result.state);
+    } else {
+      document.body.dataset.connection = 'offline';
+    }
   } finally {
     statePollInFlight = false;
   }
@@ -124,29 +136,33 @@ function startStatePolling() {
   clearInterval(statePollTimer);
   statePollTimer = null;
   if (!stateSessionPayload()) return;
-  setTimeout(() => pollAuthoritativeState(), 250);
-  statePollTimer = setInterval(pollAuthoritativeState, 1500);
+  pollAuthoritativeState();
+  const intervalMs = mode === 'display' ? 1500 : 750;
+  statePollTimer = setInterval(pollAuthoritativeState, intervalMs);
 }
 function connectEvents() {
   const token = mode === 'display' ? displayToken : mode === 'host' ? hostToken : captainToken;
   if (!roomCode || !token || mode === 'home') return;
   eventSource?.close();
+  eventSource = null;
+  if (mode !== 'display') {
+    document.body.dataset.connection = 'online';
+    startStatePolling();
+    return;
+  }
   const params = new URLSearchParams({ room:roomCode, role:mode, token });
-  if (mode === 'captain') params.set('team', team);
   eventSource = new EventSource(`/events?${params}`);
   eventSource.onopen = () => {
     document.body.dataset.connection = 'online';
-    if (mode === 'display' && audioUnlocked) emit('display:audioReady', { ready:true });
+    if (audioUnlocked) emit('display:audioReady', { ready:true });
   };
   eventSource.onerror = () => {
     document.body.dataset.connection = 'offline';
     pollAuthoritativeState();
   };
   eventSource.addEventListener('state', (event) => applyAuthoritativeState(JSON.parse(event.data)));
-  if (mode === 'display') {
-    eventSource.addEventListener('audio-play', (event) => handleAudioPlay(JSON.parse(event.data)));
-    eventSource.addEventListener('audio-pause', (event) => handleAudioPause(JSON.parse(event.data || '{}')));
-  }
+  eventSource.addEventListener('audio-play', (event) => handleAudioPlay(JSON.parse(event.data)));
+  eventSource.addEventListener('audio-pause', (event) => handleAudioPause(JSON.parse(event.data || '{}')));
   startStatePolling();
 }
 function saveDisplay() { localStorage.setItem('ntt-display', JSON.stringify({ roomCode, displayToken, hostPin })); }

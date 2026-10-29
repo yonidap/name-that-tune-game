@@ -66,7 +66,8 @@ try {
   assert.equal(oldClosed, true, 'force reconnect must close the stale captain SSE');
 
   const client = fs.readFileSync('public/game.js', 'utf8');
-  assert.match(client, /setInterval\(pollAuthoritativeState, 1500\)/);
+  assert.match(client, /mode === 'display' \? 1500 : 750/);
+  assert.match(client, /if \(mode !== 'display'\) \{[\s\S]{0,400}startStatePolling\(\);[\s\S]{0,200}return;/);
   assert.match(client, /ntt:captain-reconnected/);
   const interaction = fs.readFileSync('public/interaction-ui.js', 'utf8');
   assert.match(interaction, /forceReconnect:true/);
