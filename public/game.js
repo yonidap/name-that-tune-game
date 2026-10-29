@@ -27,6 +27,8 @@ let restoreInFlight = false;
 let restoreAttempt = 0;
 let audioLoadGeneration = 0;
 let playbackCommandGeneration = 0;
+let statePollTimer = null;
+let statePollInFlight = false;
 
 function esc(value = '') {
   return String(value).replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -84,6 +86,47 @@ function canPatchLive(previous, next) {
     previous.activeTeam === next.activeTeam && previous.audioReady === next.audioReady && sameConnections(previous, next) &&
     previous.scores.A === next.scores.A && previous.scores.B === next.scores.B && previous.audioFallback === next.audioFallback;
 }
+function applyAuthoritativeState(next) {
+  if (!next) return;
+  const previous = state;
+  if (mode === 'display' && previous) {
+    const leftPlayback = next.phase !== 'PLAYING' && (previous.phase === 'PLAYING' || activePlaybackSeq);
+    const changedSong = previous.currentIndex !== next.currentIndex;
+    if (leftPlayback || changedSong) {
+      playbackCommandGeneration += 1;
+      audio.pause();
+      clearInterval(progressTimer); progressTimer = null;
+      activePlaybackSeq = 0;
+    }
+  }
+  const patch = canPatchLive(previous, next);
+  state = next;
+  roomCode = state.roomCode;
+  if (patch) updateLiveUi(); else render();
+}
+function stateSessionPayload() {
+  const token = mode === 'display' ? displayToken : mode === 'host' ? hostToken : captainToken;
+  if (!roomCode || !token || mode === 'home') return null;
+  return { roomCode, role:mode, token, ...(mode === 'captain' ? { team } : {}) };
+}
+async function pollAuthoritativeState() {
+  const payload = stateSessionPayload();
+  if (!payload || statePollInFlight) return;
+  statePollInFlight = true;
+  try {
+    const result = await api('/api/state', payload);
+    if (result?.ok && result.state) applyAuthoritativeState(result.state);
+  } finally {
+    statePollInFlight = false;
+  }
+}
+function startStatePolling() {
+  clearInterval(statePollTimer);
+  statePollTimer = null;
+  if (!stateSessionPayload()) return;
+  setTimeout(() => pollAuthoritativeState(), 250);
+  statePollTimer = setInterval(pollAuthoritativeState, 1500);
+}
 function connectEvents() {
   const token = mode === 'display' ? displayToken : mode === 'host' ? hostToken : captainToken;
   if (!roomCode || !token || mode === 'home') return;
@@ -95,29 +138,16 @@ function connectEvents() {
     document.body.dataset.connection = 'online';
     if (mode === 'display' && audioUnlocked) emit('display:audioReady', { ready:true });
   };
-  eventSource.onerror = () => { document.body.dataset.connection = 'offline'; };
-  eventSource.addEventListener('state', (event) => {
-    const previous = state;
-    const next = JSON.parse(event.data);
-    if (mode === 'display' && previous) {
-      const leftPlayback = next.phase !== 'PLAYING' && (previous.phase === 'PLAYING' || activePlaybackSeq);
-      const changedSong = previous.currentIndex !== next.currentIndex;
-      if (leftPlayback || changedSong) {
-        playbackCommandGeneration += 1;
-        audio.pause();
-        clearInterval(progressTimer); progressTimer = null;
-        activePlaybackSeq = 0;
-      }
-    }
-    const patch = canPatchLive(previous, next);
-    state = next;
-    roomCode = state.roomCode;
-    if (patch) updateLiveUi(); else render();
-  });
+  eventSource.onerror = () => {
+    document.body.dataset.connection = 'offline';
+    pollAuthoritativeState();
+  };
+  eventSource.addEventListener('state', (event) => applyAuthoritativeState(JSON.parse(event.data)));
   if (mode === 'display') {
     eventSource.addEventListener('audio-play', (event) => handleAudioPlay(JSON.parse(event.data)));
     eventSource.addEventListener('audio-pause', (event) => handleAudioPause(JSON.parse(event.data || '{}')));
   }
+  startStatePolling();
 }
 function saveDisplay() { localStorage.setItem('ntt-display', JSON.stringify({ roomCode, displayToken, hostPin })); }
 function saveHost() { localStorage.setItem(`ntt-host-${roomCode}`, JSON.stringify({ roomCode, hostToken })); }
@@ -126,6 +156,7 @@ function clearDisplaySession() {
   localStorage.removeItem('ntt-display');
   eventSource?.close();
   eventSource = null;
+  clearInterval(statePollTimer); statePollTimer = null;
   audioLoadGeneration += 1;
   playbackCommandGeneration += 1;
   audio.pause();
@@ -656,6 +687,14 @@ async function restoreSession() {
     restoreInFlight = false;
   }
 }
+
+window.addEventListener('ntt:captain-reconnected', (event) => {
+  if (mode !== 'captain') return;
+  const detail = event.detail || {};
+  if (!detail.roomCode || !['A','B'].includes(detail.team) || !detail.captainToken || !detail.state) return;
+  roomCode = detail.roomCode; team = detail.team; captainToken = detail.captainToken; state = detail.state;
+  finishRestore(); saveCaptain(); connectEvents(); render();
+});
 
 function startDisplayKeepAlive() {
   if (mode !== 'display') return;

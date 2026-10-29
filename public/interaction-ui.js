@@ -88,14 +88,14 @@ async function reconnectCaptain(button) {
     const response = await fetch('/api/captain/join', {
       method:'POST',
       headers:{ 'content-type':'application/json' },
-      body:JSON.stringify({ roomCode:session.roomCode, team:session.team, captainToken:session.token }),
+      body:JSON.stringify({ roomCode:session.roomCode, team:session.team, captainToken:session.token, forceReconnect:true }),
       signal:controller.signal
     });
     const result = await response.json().catch(() => ({ ok:false, error:'BAD_RESPONSE' }));
     if (response.ok && result?.ok && result.captainToken) {
       localStorage.setItem(`ntt-captain-${session.roomCode}-${session.team}`, JSON.stringify({ roomCode:session.roomCode, team:session.team, captainToken:result.captainToken }));
       localStorage.setItem(`ntt-captain-active-${session.roomCode}`, session.team);
-      location.reload();
+      window.dispatchEvent(new CustomEvent('ntt:captain-reconnected', { detail:{ roomCode:session.roomCode, team:session.team, captainToken:result.captainToken, state:result.state } }));
       return;
     }
     if (button?.isConnected) button.disabled = false;

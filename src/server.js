@@ -310,7 +310,10 @@ async function handleApi(req, res, url) {
     const room = roomOrError(body.roomCode, res); if (!room) return;
     const team = body.team;
     if (!['A', 'B'].includes(team)) return json(res, 400, { ok: false, error: 'INVALID_TEAM' });
-    if (body.captainToken && room.captainTokens[team] === body.captainToken) return json(res, 200, { ok: true, captainToken: body.captainToken, state: publicState(room, 'captain', team) });
+    if (body.captainToken && room.captainTokens[team] === body.captainToken) {
+      if (body.forceReconnect) { closeCaptainClients(room, team); broadcastState(room); }
+      return json(res, 200, { ok: true, captainToken: body.captainToken, state: publicState(room, 'captain', team) });
+    }
     if (room.captainTokens[team]) {
       const connected = connectionStatus(room)[team];
       const justClaimed = room.captainClaimedAt?.[team] && Date.now() - room.captainClaimedAt[team] < 3000;
@@ -320,6 +323,18 @@ async function handleApi(req, res, url) {
     }
     const captainToken = token(); room.captainTokens[team] = captainToken; room.captainClaimedAt[team] = Date.now(); broadcastState(room);
     return json(res, 200, { ok: true, captainToken, state: publicState(room, 'captain', team) });
+  }
+
+  if (url.pathname === '/api/state') {
+    const room = roomOrError(body.roomCode, res); if (!room) return;
+    const role = String(body.role || '');
+    const team = body.team;
+    if (role === 'display' && !displayOk(room, body.token)) return json(res, 403, { ok: false, error: 'UNAUTHORIZED' });
+    if (role === 'host' && !hostOk(room, body.token)) return json(res, 403, { ok: false, error: 'UNAUTHORIZED' });
+    if (role === 'captain' && !captainOk(room, team, body.token)) return json(res, 403, { ok: false, error: 'UNAUTHORIZED' });
+    if (!['display', 'host', 'captain'].includes(role)) return json(res, 400, { ok: false, error: 'INVALID_ROLE' });
+    touch(room);
+    return json(res, 200, { ok: true, state: publicState(room, role, role === 'captain' ? team : null) });
   }
 
   if (url.pathname !== '/api/action') return json(res, 404, { ok: false, error: 'NOT_FOUND' });
