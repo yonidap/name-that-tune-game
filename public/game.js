@@ -540,7 +540,7 @@ async function restoreSession() {
   if (mode !== 'home') renderRestoringSession();
   try {
     if (mode === 'display') {
-      const saved = readStoredJson('ttt-display');
+      const saved = readStoredJson('ntt-display');
       if (saved?.roomCode && saved?.displayToken) {
         const result = await api('/api/display/resume', saved);
         if (result?.ok) {

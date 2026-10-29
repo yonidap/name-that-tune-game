@@ -173,6 +173,8 @@ try {
   const game = fs.readFileSync('public/game.js', 'utf8');
   const interaction = fs.readFileSync('public/interaction-ui.js', 'utf8');
   assert.match(game, /isTransientRestoreError/, 'transient restore failures must keep valid sessions');
+  assert.match(game, /readStoredJson\('ntt-display'\)/, 'display refresh must restore from the same storage key used by saveDisplay');
+  assert.doesNotMatch(game, /ttt-display/, 'legacy typo must never return');
   assert.match(game, /savedTeams\.length > 1/, 'restore must explicitly handle browsers that contain both team sessions');
   assert.match(game, /captainToken = result\.captainToken \|\| saved\.captainToken/, 'restore must use a rotated server token');
   assert.match(game, /display-audio-recovery/, 'display refresh must expose speaker recovery');
