@@ -1,0 +1,402 @@
+name: Full audit hardening
+
+on:
+  push:
+    paths:
+      - '.github/workflows/full-audit-hardening.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply resilience fixes and add regression coverage
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import json, re
+
+          # ---------- Server hardening ----------
+          p = Path('src/server.js')
+          s = p.read_text()
+
+          old = """  if (action === 'captain:pause') {\n    if (room.activeTeam !== body.team || room.phase !== 'PLAYING') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });\n    sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq }); return json(res, 200, { ok: true });\n  }\n"""
+          new = """  if (action === 'captain:pause') {\n    if (room.activeTeam !== body.team || room.phase !== 'PLAYING') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });\n    // STOP is authoritative at the server. Do not wait for the display's progress callback.\n    room.phase = 'PAUSED';\n    sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });\n    broadcastState(room);\n    return json(res, 200, { ok: true });\n  }\n"""
+          if old not in s:
+              raise SystemExit('captain:pause block not found')
+          s = s.replace(old, new, 1)
+
+          old = """  if (action === 'host:releaseCaptain') {\n    if (room.phase !== 'LOBBY' || !['A', 'B'].includes(body.team)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });\n    closeCaptainClients(room, body.team); room.captainTokens[body.team] = null; room.captainClaimedAt[body.team] = null; broadcastState(room); return json(res, 200, { ok: true });\n  }\n"""
+          new = """  if (action === 'host:releaseCaptain') {\n    if (!['A', 'B'].includes(body.team) || room.phase === 'FINISHED') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });\n    // Allow the host to recover a captain slot during a live game. If that captain was\n    // actively playing, pause first so the replacement phone inherits a safe state.\n    if (room.activeTeam === body.team && room.phase === 'PLAYING') {\n      room.phase = 'PAUSED';\n      sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });\n    }\n    closeCaptainClients(room, body.team);\n    room.captainTokens[body.team] = null;\n    room.captainClaimedAt[body.team] = null;\n    broadcastState(room);\n    return json(res, 200, { ok: true });\n  }\n"""
+          if old not in s:
+              raise SystemExit('host:releaseCaptain block not found')
+          s = s.replace(old, new, 1)
+
+          old = "room.history = []; room.playlist = makePlaylist(room.gameLength); room.scores = { A: 0, B: 0 }; room.round = 'easy'; loadSong(room, 0);\n    broadcastState(room);"
+          new = "room.history = []; room.playlist = makePlaylist(room.gameLength); room.scores = { A: 0, B: 0 }; room.round = 'easy'; loadSong(room, 0);\n    if (room.currentIndex === 0 && room.phase === 'ROUND_INTRO') room.phase = 'READY';\n    broadcastState(room);"
+          if old not in s:
+              raise SystemExit('host:restart sequence not found')
+          s = s.replace(old, new, 1)
+
+          old = "if (role === 'display' && [...room.clients].some((client) => client.role === 'display')) { res.writeHead(409); return res.end(); }"
+          new = """if (role === 'display') {\n    const previousDisplays = [...room.clients].filter((client) => client.role === 'display');\n    if (previousDisplays.length) {\n      // A refreshed display replaces the stale SSE connection. Browser audio permission\n      // is intentionally revoked and must be re-enabled on the refreshed screen.\n      if (room.phase === 'PLAYING') {\n        sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });\n        room.phase = 'PAUSED';\n      }\n      room.audioReady = false;\n      for (const previous of previousDisplays) {\n        room.clients.delete(previous);\n        try { previous.res.end(); } catch {}\n      }\n    }\n  }"""
+          if old not in s:
+              raise SystemExit('display duplicate SSE guard not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # ---------- Main client hardening ----------
+          p = Path('public/game.js')
+          s = p.read_text()
+
+          marker = "let usingDemoAudio = false;\n"
+          addition = """let usingDemoAudio = false;\nlet restoreRetryTimer = null;\nlet restoreInFlight = false;\nlet restoreAttempt = 0;\n"""
+          if marker not in s:
+              raise SystemExit('game state marker not found')
+          s = s.replace(marker, addition, 1)
+
+          # Make saved-session reads safe even if localStorage contains malformed legacy data.
+          old = "const saved = JSON.parse(localStorage.getItem(`ntt-host-${roomCode}`) || 'null');"
+          if old not in s:
+              raise SystemExit('host saved-session read not found')
+          s = s.replace(old, "const saved = readStoredJson(`ntt-host-${roomCode}`);", 1)
+          old = "const saved = JSON.parse(localStorage.getItem(`ntt-captain-${roomCode}-${team}`) || 'null');"
+          if old not in s:
+              raise SystemExit('captain saved-session read not found')
+          s = s.replace(old, "const saved = readStoredJson(`ntt-captain-${roomCode}-${team}`);", 1)
+
+          # Add an in-game speaker recovery button. Refreshing the display revokes autoplay permission.
+          old = """    ${s.phase === 'FINISHED' ? `${finalScreen(s)}<button class=\"primary-control new-room-control\" id=\"new-room\">NEW ROOM</button>` : ''}\n  </main>`;"""
+          new = """    ${s.phase === 'FINISHED' ? `${finalScreen(s)}<button class=\"primary-control new-room-control\" id=\"new-room\">NEW ROOM</button>` : ''}\n    ${s.phase !== 'FINISHED' && (!audioUnlocked || !s.audioReady) ? `<section class=\"display-audio-recovery\"><button class=\"audio-btn\" id=\"enable-audio\">🔊 RE-ENABLE SPEAKERS</button><span>Audio permission is required after a screen refresh.</span></section>` : ''}\n  </main>`;"""
+          if old not in s:
+              raise SystemExit('displayGame closing block not found')
+          s = s.replace(old, new, 1)
+
+          # Add captain-slot recovery controls to the live host card as well as the lobby.
+          old = """      <details class=\"score-tools\"><summary>SCORE CORRECTION</summary><div class=\"score-adjust\"><button data-score=\"A\" data-delta=\"-1\">A −1</button><button data-score=\"A\" data-delta=\"1\">A +1</button><button data-score=\"B\" data-delta=\"-1\">B −1</button><button data-score=\"B\" data-delta=\"1\">B +1</button></div></details>"""
+          new = old + """\n      <details class=\"score-tools captain-tools\"><summary>CAPTAIN RECONNECT</summary><div class=\"score-adjust\"><button data-release=\"A\">RESET A</button><button data-release=\"B\">RESET B</button></div></details>"""
+          if old not in s:
+              raise SystemExit('host score tools block not found')
+          s = s.replace(old, new, 1)
+
+          # Replace restoreSession with a defensive restore flow: never delete a valid token because of a transient outage,
+          # never guess between two stored teams, and never leave the page black while waiting.
+          restore_pattern = re.compile(r"async function restoreSession\(\) \{.*?\n\}\n\nrestoreSession\(\);", re.S)
+          if not restore_pattern.search(s):
+              raise SystemExit('restoreSession block not found')
+          restore = r'''function readStoredJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); }
+  catch { localStorage.removeItem(key); return null; }
+}
+function isTransientRestoreError(result) {
+  return ['NETWORK_ERROR','BAD_RESPONSE','INTERNAL_ERROR'].includes(result?.error);
+}
+function renderRestoringSession() {
+  app.innerHTML = `<main class="shell phone-shell restore-shell">${brand('RESTORING SESSION', true)}<section class="controller-card center-stack restore-card"><div class="controller-icon">↻</div><h2>RECONNECTING…</h2><p>Restoring this device to the current game.</p></section></main>`;
+}
+function scheduleRestoreRetry() {
+  restoreAttempt += 1;
+  const delay = Math.min(5000, 500 * (2 ** Math.min(restoreAttempt - 1, 3)));
+  renderRestoringSession();
+  clearTimeout(restoreRetryTimer);
+  restoreRetryTimer = setTimeout(() => restoreSession(), delay);
+}
+function finishRestore() {
+  restoreAttempt = 0;
+  clearTimeout(restoreRetryTimer);
+  restoreRetryTimer = null;
+}
+
+async function restoreSession() {
+  if (restoreInFlight) return;
+  restoreInFlight = true;
+  if (mode !== 'home') renderRestoringSession();
+  try {
+    if (mode === 'display') {
+      const saved = readStoredJson('ntt-display');
+      if (saved?.roomCode && saved?.displayToken) {
+        const result = await api('/api/display/resume', saved);
+        if (result?.ok) {
+          roomCode = result.roomCode; displayToken = result.displayToken; hostPin = result.hostPin; state = result.state;
+          finishRestore(); saveDisplay(); connectEvents(); render(); return;
+        }
+        if (isTransientRestoreError(result)) { scheduleRestoreRetry(); return; }
+        localStorage.removeItem('ntt-display');
+      }
+    }
+    if (mode === 'host' && roomFromPath) {
+      const key = `ntt-host-${roomFromPath}`;
+      const saved = readStoredJson(key);
+      if (saved?.hostToken) {
+        const result = await api('/api/host/join', saved);
+        if (result?.ok) {
+          roomCode = roomFromPath; hostToken = result.hostToken || saved.hostToken; state = result.state;
+          finishRestore(); saveHost(); connectEvents(); render(); return;
+        }
+        if (isTransientRestoreError(result)) { scheduleRestoreRetry(); return; }
+        localStorage.removeItem(key);
+      }
+    }
+    if (mode === 'captain' && roomFromPath) {
+      const activeKey = `ntt-captain-active-${roomFromPath}`;
+      const activeTeam = localStorage.getItem(activeKey);
+      const savedTeams = ['A','B'].map((t) => ({ team:t, saved:readStoredJson(`ntt-captain-${roomFromPath}-${t}`) }))
+        .filter((entry) => entry.saved?.captainToken);
+      let candidate = null;
+      if (['A','B'].includes(activeTeam)) candidate = savedTeams.find((entry) => entry.team === activeTeam) || null;
+      else if (savedTeams.length === 1) candidate = savedTeams[0];
+      else if (savedTeams.length > 1) {
+        // Legacy/shared browser with two saved teams: never silently choose Team A.
+        finishRestore(); render(); return;
+      }
+      if (candidate) {
+        const result = await api('/api/captain/join', candidate.saved);
+        if (result?.ok) {
+          roomCode = roomFromPath; team = candidate.team; captainToken = result.captainToken || candidate.saved.captainToken; state = result.state;
+          finishRestore(); saveCaptain(); connectEvents(); render(); return;
+        }
+        if (isTransientRestoreError(result)) { scheduleRestoreRetry(); return; }
+        localStorage.removeItem(`ntt-captain-${roomFromPath}-${candidate.team}`);
+        if (activeTeam === candidate.team) localStorage.removeItem(activeKey);
+      } else if (['A','B'].includes(activeTeam)) {
+        localStorage.removeItem(activeKey);
+      }
+    }
+    finishRestore();
+    render();
+  } finally {
+    restoreInFlight = false;
+  }
+}
+
+restoreSession();'''
+          s = restore_pattern.sub(restore, s, count=1)
+          p.write_text(s)
+
+          # ---------- Remove the obsolete initial-Easy client-side state patch ----------
+          p = Path('public/interaction-ui.js')
+          s = p.read_text()
+          s = s.replace("let initialEasyAdvanceInFlight = false;\nlet initialEasyRetryTimer = null;\n\n", "", 1)
+
+          captain_pattern = re.compile(r"function captainSession\(\) \{.*?\n\}\n\nfunction hostSession", re.S)
+          if not captain_pattern.search(s):
+              raise SystemExit('interaction captainSession block not found')
+          captain_session = '''function captainSession() {
+  if (!isCaptainRoute) return null;
+  const roomCode = String(routeParts[1]).toUpperCase();
+  const activeTeam = localStorage.getItem(`ntt-captain-active-${roomCode}`);
+  const read = (team) => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`ntt-captain-${roomCode}-${team}`) || 'null');
+      return saved?.captainToken ? { roomCode, team, token:saved.captainToken } : null;
+    } catch { return null; }
+  };
+  if (['A','B'].includes(activeTeam)) return read(activeTeam);
+  const sessions = ['A','B'].map(read).filter(Boolean);
+  return sessions.length === 1 ? sessions[0] : null;
+}
+
+function hostSession'''
+          s = captain_pattern.sub(captain_session, s, count=1)
+
+          easy_pattern = re.compile(r"\nasync function ensureInitialEasyReady\(\) \{.*?\n\}\n", re.S)
+          if not easy_pattern.search(s):
+              raise SystemExit('obsolete ensureInitialEasyReady block not found')
+          s = easy_pattern.sub("\n", s, count=1)
+          s = s.replace("\n  ensureInitialEasyReady();", "", 1)
+          s = s.replace("\n    clearTimeout(initialEasyRetryTimer);", "", 1)
+          p.write_text(s)
+
+          # ---------- Speaker recovery CSS ----------
+          p = Path('public/game.css')
+          s = p.read_text()
+          css = r'''
+
+/* Display recovery after refresh/autoplay reset. Kept out of document flow so it cannot break viewport layout. */
+.display-audio-recovery{position:fixed;z-index:80;left:50%;bottom:max(16px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(760px,calc(100% - 32px));display:flex;align-items:center;justify-content:center;gap:16px;padding:12px 16px;border:2px solid var(--yellow);background:rgba(5,5,7,.96);box-shadow:8px 8px 0 rgba(244,255,56,.18);font-family:var(--font-ui);font-size:18px;text-align:center}
+.display-audio-recovery .audio-btn{flex:0 0 auto;min-height:48px;padding:0 20px}
+.restore-shell{min-height:min(100dvh,760px);align-content:center}.restore-card{min-height:280px}
+@media(max-width:860px){.display-audio-recovery{flex-direction:column;gap:9px;padding:10px 12px;font-size:16px}.display-audio-recovery .audio-btn{width:100%}}
+'''
+          if '.display-audio-recovery{' not in s:
+              s += css
+          p.write_text(s)
+
+          # ---------- Deep resilience regression test ----------
+          Path('test/resilience-audit.test.js').write_text(r'''import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import http from 'node:http';
+
+process.env.STEAL_MS = '180';
+const { createServer } = await import('../src/server.js');
+const server = createServer();
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+const { port } = server.address();
+const base = `http://127.0.0.1:${port}`;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function post(path, body) {
+  const response = await fetch(`${base}${path}`, { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify(body) });
+  return { status:response.status, body:await response.json() };
+}
+function connectSse({ room, role, token, team }) {
+  return new Promise((resolve, reject) => {
+    const q = new URLSearchParams({ room, role, token });
+    if (team) q.set('team', team);
+    const req = http.get(`${base}/events?${q}`, (res) => {
+      if (res.statusCode !== 200) { req.destroy(); return reject(new Error(`SSE ${role}/${team || '-'} failed: ${res.statusCode}`)); }
+      res.on('data', () => {});
+      resolve({ close:() => req.destroy() });
+    });
+    req.on('error', reject);
+  });
+}
+function sseStatus({ room, role, token, team }) {
+  return new Promise((resolve) => {
+    const q = new URLSearchParams({ room, role, token });
+    if (team) q.set('team', team);
+    const req = http.get(`${base}/events?${q}`, (res) => { const status = res.statusCode; req.destroy(); resolve(status); });
+    req.on('error', () => resolve(0));
+  });
+}
+
+const streams = [];
+try {
+  const created = await post('/api/display/create', { gameLength:'short', teamNames:{ A:'A', B:'B' } });
+  const { roomCode, displayToken, hostPin } = created.body;
+  const host = await post('/api/host/join', { roomCode, hostPin });
+  const hostToken = host.body.hostToken;
+  const capA = await post('/api/captain/join', { roomCode, team:'A' });
+  const capB = await post('/api/captain/join', { roomCode, team:'B' });
+  const tokenA = capA.body.captainToken;
+  const tokenB = capB.body.captainToken;
+
+  let displayStream = await connectSse({ room:roomCode, role:'display', token:displayToken }); streams.push(displayStream);
+  const hostStream = await connectSse({ room:roomCode, role:'host', token:hostToken }); streams.push(hostStream);
+  let aStream = await connectSse({ room:roomCode, role:'captain', team:'A', token:tokenA }); streams.push(aStream);
+  const bStream = await connectSse({ room:roomCode, role:'captain', team:'B', token:tokenB }); streams.push(bStream);
+  await post('/api/action', { action:'display:audioReady', roomCode, token:displayToken, ready:true });
+  assert.equal((await post('/api/action', { action:'host:start', roomCode, token:hostToken })).status, 200);
+
+  let state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'READY');
+  assert.equal(state.activeTeam, 'A');
+
+  // STOP must be authoritative immediately, even before the display sends a position callback.
+  const play = await post('/api/action', { action:'captain:play', roomCode, token:tokenA, team:'A' });
+  assert.equal(play.status, 200);
+  assert.equal((await post('/api/action', { action:'captain:pause', roomCode, token:tokenA, team:'A' })).status, 200);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'PAUSED', 'STOP must move server state to PAUSED immediately');
+
+  // A connected captain cannot be taken over anonymously.
+  assert.equal((await post('/api/captain/join', { roomCode, team:'A' })).status, 409);
+
+  // After a real disconnect, a replacement phone can claim the same team and receives a rotated token.
+  aStream.close();
+  await sleep(3100); // exceed the short anti-double-claim guard
+  const reconnectA = await post('/api/captain/join', { roomCode, team:'A' });
+  assert.equal(reconnectA.status, 200);
+  const tokenA2 = reconnectA.body.captainToken;
+  assert.notEqual(tokenA2, tokenA, 'replacement captain should receive a new token');
+  assert.equal(await sseStatus({ room:roomCode, role:'captain', team:'A', token:tokenA }), 403, 'rotated old captain token must be rejected');
+  aStream = await connectSse({ room:roomCode, role:'captain', team:'A', token:tokenA2 }); streams.push(aStream);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'PAUSED', 'captain reconnect must preserve current game state');
+
+  // Finish the five Easy songs; only the Medium transition should show ROUND_INTRO.
+  for (let i = 0; i < 5; i += 1) {
+    state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+    assert.equal(state.currentIndex, i);
+    assert.ok(['READY','PAUSED'].includes(state.phase));
+    assert.equal((await post('/api/action', { action:'host:reveal', roomCode, token:hostToken })).status, 200);
+    assert.equal((await post('/api/action', { action:'host:next', roomCode, token:hostToken })).status, 200);
+  }
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.currentIndex, 5);
+  assert.equal(state.round, 'medium');
+  assert.equal(state.phase, 'ROUND_INTRO', 'later difficulty transitions must retain the round intro');
+  assert.equal(state.activeTeam, 'B', 'Medium round should start with Team B');
+  assert.equal((await post('/api/action', { action:'host:beginRound', roomCode, token:hostToken })).status, 200);
+
+  // END GAME must cancel a live steal timer permanently.
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  const d = state.song.duration;
+  let p = await post('/api/action', { action:'captain:play', roomCode, token:tokenB, team:'B' });
+  assert.equal(p.status, 200);
+  await post('/api/action', { action:'display:audioProgress', roomCode, token:displayToken, seq:p.body.playbackSeq, position:Math.min(.3, d/4), paused:true });
+  assert.equal((await post('/api/action', { action:'captain:lockAnswer', roomCode, token:tokenB, team:'B' })).status, 200);
+  assert.equal((await post('/api/action', { action:'host:markWrong', roomCode, token:hostToken })).status, 200);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'STEAL');
+  assert.equal((await post('/api/action', { action:'host:endGame', roomCode, token:hostToken })).status, 200);
+  await sleep(260);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.phase, 'FINISHED', 'steal timeout must not fire after END GAME');
+  assert.equal(state.stealDeadline, null);
+
+  // PLAY AGAIN starts song 1 in READY, matching the initial START GAME behavior.
+  assert.equal((await post('/api/action', { action:'host:restart', roomCode, token:hostToken })).status, 200);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.currentIndex, 0);
+  assert.equal(state.round, 'easy');
+  assert.equal(state.phase, 'READY');
+  assert.deepEqual(state.scores, { A:0, B:0 });
+
+  // Host can release a captain slot during a live game so a genuinely new phone can take over.
+  assert.equal((await post('/api/action', { action:'host:releaseCaptain', roomCode, token:hostToken, team:'A' })).status, 200);
+  const replacementA = await post('/api/captain/join', { roomCode, team:'A' });
+  assert.equal(replacementA.status, 200, 'host reset must permit mid-game captain replacement');
+
+  // A refreshed display may replace the old SSE connection; audio must be re-enabled afterwards.
+  displayStream.close();
+  await sleep(60);
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.audioReady, false);
+  displayStream = await connectSse({ room:roomCode, role:'display', token:displayToken }); streams.push(displayStream);
+  await post('/api/action', { action:'display:audioReady', roomCode, token:displayToken, ready:true });
+  state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
+  assert.equal(state.audioReady, true);
+
+  // Client-side resilience contracts.
+  const game = fs.readFileSync('public/game.js', 'utf8');
+  const interaction = fs.readFileSync('public/interaction-ui.js', 'utf8');
+  assert.match(game, /isTransientRestoreError/, 'temporary network errors must not erase saved sessions');
+  assert.match(game, /savedTeams\.length === 1/, 'captain restore must not guess when two teams are stored');
+  assert.match(game, /display-audio-recovery/, 'active display must expose speaker recovery after refresh');
+  assert.doesNotMatch(interaction, /ensureInitialEasyReady/, 'first-round readiness must remain server-authoritative');
+
+  console.log('Full resilience audit passed');
+} finally {
+  for (const stream of streams) { try { stream.close(); } catch {} }
+  await new Promise((resolve) => server.close(resolve));
+}
+''')
+
+          # ---------- Include the new audit in normal CI ----------
+          p = Path('package.json')
+          pkg = json.loads(p.read_text())
+          if 'test/resilience-audit.test.js' not in pkg['scripts']['check']:
+              pkg['scripts']['check'] += ' && node --check test/resilience-audit.test.js'
+          if 'test/resilience-audit.test.js' not in pkg['scripts']['test']:
+              pkg['scripts']['test'] += ' && node test/resilience-audit.test.js'
+          p.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + '\n')
+          PY
+      - run: npm run check
+      - run: npm test
+      - name: Commit hardened implementation and remove one-shot workflow
+        run: |
+          rm .github/workflows/full-audit-hardening.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/server.js public/game.js public/game.css public/interaction-ui.js test/resilience-audit.test.js package.json .github/workflows/full-audit-hardening.yml
+          git commit -m "Harden reconnect, refresh, pause and restart flows"
+          git push
