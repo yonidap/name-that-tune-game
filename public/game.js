@@ -22,6 +22,9 @@ let eventSource = null;
 let selectedGameLength = 'normal';
 let activePlaybackSeq = 0;
 let usingDemoAudio = false;
+let restoreRetryTimer = null;
+let restoreInFlight = false;
+let restoreAttempt = 0;
 
 function esc(value = '') {
   return String(value).replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -256,6 +259,7 @@ function displayGame(s) {
       <div class="progress-wrap"><div class="meter"><div style="width:${exposureProgress(s)}%"></div></div><div class="heard">${heardText(s)}</div></div>
       <div class="phase-call">${playbackStatusText(s)}</div>`}</section>` : ''}
     ${s.phase === 'FINISHED' ? `${finalScreen(s)}<button class="primary-control new-room-control" id="new-room">NEW ROOM</button>` : ''}
+    ${s.phase !== 'FINISHED' && (!audioUnlocked || !s.audioReady) ? `<section class="display-audio-recovery"><button class="audio-btn" id="enable-audio">🔊 RE-ENABLE SPEAKERS</button><span>Audio permission is required after a screen refresh.</span></section>` : ''}
   </main>`;
 }
 function bindDisplayControls() {
@@ -289,7 +293,7 @@ function renderHostJoin() {
 async function joinHostController() {
   roomCode = roomFromPath;
   const pin = document.querySelector('#host-pin-input')?.value.trim();
-  const saved = JSON.parse(localStorage.getItem(`ntt-host-${roomCode}`) || 'null');
+  const saved = readStoredJson(`ntt-host-${roomCode}`);
   const result = await api('/api/host/join', { roomCode, hostPin:pin, hostToken:saved?.hostToken || null });
   if (!result?.ok) {
     document.querySelector('#host-error').textContent = result?.error === 'BAD_PIN' ? 'Wrong PIN.' : result?.error === 'ROOM_NOT_FOUND' ? 'Room not found.' : 'Could not connect.';
@@ -319,6 +323,7 @@ function renderHostController() {
       ${canJudge ? `<div class="judge-buttons"><button class="judge-btn correct" id="correct">✓<span>CORRECT</span></button><button class="judge-btn wrong" id="wrong">✕<span>WRONG</span></button></div>` : `<div class="waiting-judge">${s.phase === 'PLAYING' ? 'Listening…' : s.phase === 'PAUSED' ? 'Captain is deciding…' : s.phase === 'STEAL' ? 'Steal team has 10 seconds to lock an answer…' : revealState ? 'Answer revealed' : 'Waiting for captain…'}</div>`}
       <div class="controller-actions"><button class="secondary-control warn" id="reveal" ${revealState ? 'disabled' : ''}>REVEAL</button><button class="secondary-control next" id="next" ${revealState ? '' : 'disabled'}>NEXT →</button><button class="secondary-control" id="undo" ${s.undoAvailable ? '' : 'disabled'}>UNDO</button></div>
       <details class="score-tools"><summary>SCORE CORRECTION</summary><div class="score-adjust"><button data-score="A" data-delta="-1">A −1</button><button data-score="A" data-delta="1">A +1</button><button data-score="B" data-delta="-1">B −1</button><button data-score="B" data-delta="1">B +1</button></div></details>
+      <details class="score-tools captain-tools"><summary>CAPTAIN RECONNECT</summary><div class="score-adjust"><button data-release="A">RESET A</button><button data-release="B">RESET B</button></div></details>
     </section>` : ''}
     ${s.phase === 'FINISHED' ? `${finalScreen(s)}<button class="primary-control" id="play-again">↻ PLAY AGAIN</button>` : ''}
   </main>`;
@@ -340,7 +345,7 @@ function renderCaptainJoin() {
 }
 async function joinCaptain(selectedTeam) {
   roomCode = roomFromPath; team = selectedTeam;
-  const saved = JSON.parse(localStorage.getItem(`ntt-captain-${roomCode}-${team}`) || 'null');
+  const saved = readStoredJson(`ntt-captain-${roomCode}-${team}`);
   const result = await api('/api/captain/join', { roomCode, team, captainToken:saved?.captainToken || null });
   if (!result?.ok) {
     document.querySelector('#join-error').textContent = result?.error === 'TEAM_TAKEN' ? 'That captain slot is already taken. Ask the host to reset it.' : result?.error === 'ROOM_NOT_FOUND' ? 'Room not found. Check the code.' : 'Could not join.';
@@ -506,42 +511,93 @@ audio.addEventListener('ended', () => {
   if (mode === 'display' && activePlaybackSeq) emit('display:audioEnded', { position:audio.currentTime, seq:activePlaybackSeq });
 });
 
+function readStoredJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); }
+  catch { localStorage.removeItem(key); return null; }
+}
+function isTransientRestoreError(result) {
+  return ['NETWORK_ERROR','BAD_RESPONSE','INTERNAL_ERROR'].includes(result?.error);
+}
+function renderRestoringSession() {
+  app.innerHTML = `<main class="shell phone-shell restore-shell">${brand('RESTORING SESSION', true)}<section class="controller-card center-stack restore-card"><div class="controller-icon">↻</div><h2>RECONNECTING…</h2><p>Restoring this device to the current game.</p></section></main>`;
+}
+function scheduleRestoreRetry() {
+  restoreAttempt += 1;
+  const delay = Math.min(5000, 500 * (2 ** Math.min(restoreAttempt - 1, 3)));
+  renderRestoringSession();
+  clearTimeout(restoreRetryTimer);
+  restoreRetryTimer = setTimeout(() => restoreSession(), delay);
+}
+function finishRestore() {
+  restoreAttempt = 0;
+  clearTimeout(restoreRetryTimer);
+  restoreRetryTimer = null;
+}
+
 async function restoreSession() {
-  if (mode === 'display') {
-    const saved = JSON.parse(localStorage.getItem('ntt-display') || 'null');
-    if (saved?.roomCode && saved?.displayToken) {
-      const result = await api('/api/display/resume', saved);
-      if (result?.ok) {
-        roomCode = result.roomCode; displayToken = result.displayToken; hostPin = result.hostPin; state = result.state;
-        saveDisplay(); connectEvents(); render(); return;
+  if (restoreInFlight) return;
+  restoreInFlight = true;
+  if (mode !== 'home') renderRestoringSession();
+  try {
+    if (mode === 'display') {
+      const saved = readStoredJson('ttt-display');
+      if (saved?.roomCode && saved?.displayToken) {
+        const result = await api('/api/display/resume', saved);
+        if (result?.ok) {
+          roomCode = result.roomCode; displayToken = result.displayToken; hostPin = result.hostPin; state = result.state;
+          finishRestore(); saveDisplay(); connectEvents(); render(); return;
+        }
+        if (isTransientRestoreError(result)) { scheduleRestoreRetry(); return; }
+        localStorage.removeItem('ntt-display');
       }
-      localStorage.removeItem('ntt-display');
     }
-  }
-  if (mode === 'host' && roomFromPath) {
-    const saved = JSON.parse(localStorage.getItem(`ntt-host-${roomFromPath}`) || 'null');
-    if (saved?.hostToken) {
-      const result = await api('/api/host/join', saved);
-      if (result?.ok) { roomCode = roomFromPath; hostToken = saved.hostToken; state = result.state; connectEvents(); render(); return; }
-      localStorage.removeItem(`ntt-host-${roomFromPath}`);
-    }
-  }
-  if (mode === 'captain' && roomFromPath) {
-    const activeTeam = localStorage.getItem(`ntt-captain-active-${roomFromPath}`);
-    const restoreOrder = ['A','B'].includes(activeTeam) ? [activeTeam, activeTeam === 'A' ? 'B' : 'A'] : ['A','B'];
-    for (const t of restoreOrder) {
-      const saved = JSON.parse(localStorage.getItem(`ntt-captain-${roomFromPath}-${t}`) || 'null');
-      if (!saved?.captainToken) continue;
-      const result = await api('/api/captain/join', saved);
-      if (result?.ok) {
-        roomCode = roomFromPath; team = t; captainToken = result.captainToken || saved.captainToken; state = result.state;
-        saveCaptain(); connectEvents(); render(); return;
+    if (mode === 'host' && roomFromPath) {
+      const key = `ntt-host-${roomFromPath}`;
+      const saved = readStoredJson(key);
+      if (saved?.hostToken) {
+        const result = await api('/api/host/join', saved);
+        if (result?.ok) {
+          roomCode = roomFromPath; hostToken = result.hostToken || saved.hostToken; state = result.state;
+          finishRestore(); saveHost(); connectEvents(); render(); return;
+        }
+        if (isTransientRestoreError(result)) { scheduleRestoreRetry(); return; }
+        localStorage.removeItem(key);
       }
-      localStorage.removeItem(`ntt-captain-${roomFromPath}-${t}`);
-      if (activeTeam === t) localStorage.removeItem(`ntt-captain-active-${roomFromPath}`);
     }
+    if (mode === 'captain' && roomFromPath) {
+      const activeKey = `ntt-captain-active-${roomFromPath}`;
+      const activeTeam = localStorage.getItem(activeKey);
+      const savedTeams = ['A','B']
+        .map((t) => ({ team:t, saved:readStoredJson(`ntt-captain-${roomFromPath}-${t}`) }))
+        .filter((entry) => entry.saved?.captainToken);
+      const restoreOrder = ['A','B'].includes(activeTeam) ? [activeTeam] : savedTeams.map((entry) => entry.team);
+      let candidate = null;
+      if (['A','B'].includes(activeTeam)) {
+        candidate = savedTeams.find((entry) => entry.team === activeTeam) || null;
+      } else if (savedTeams.length === 1) {
+        candidate = savedTeams[0];
+      } else if (savedTeams.length > 1) {
+        finishRestore(); render(); return;
+      }
+      if (candidate) {
+        const saved = candidate.saved;
+        const result = await api('/api/captain/join', saved);
+        if (result?.ok) {
+          roomCode = roomFromPath; team = candidate.team; captainToken = result.captainToken || saved.captainToken; state = result.state;
+          finishRestore(); saveCaptain(); connectEvents(); render(); return;
+        }
+        if (isTransientRestoreError(result)) { scheduleRestoreRetry(); return; }
+        localStorage.removeItem(`ntt-captain-${roomFromPath}-${candidate.team}`);
+        if (activeTeam === candidate.team) localStorage.removeItem(activeKey);
+      } else if (['A','B'].includes(activeTeam)) {
+        localStorage.removeItem(activeKey);
+      }
+    }
+    finishRestore();
+    render();
+  } finally {
+    restoreInFlight = false;
   }
-  render();
 }
 
 restoreSession();

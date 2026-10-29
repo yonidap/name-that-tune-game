@@ -285,8 +285,16 @@ async function handleApi(req, res, url) {
     snapshot(room); room.phase = 'READY'; broadcastState(room); return json(res, 200, { ok: true });
   }
   if (action === 'host:releaseCaptain') {
-    if (room.phase !== 'LOBBY' || !['A', 'B'].includes(body.team)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
-    closeCaptainClients(room, body.team); room.captainTokens[body.team] = null; room.captainClaimedAt[body.team] = null; broadcastState(room); return json(res, 200, { ok: true });
+    if (!['A', 'B'].includes(body.team) || room.phase === 'FINISHED') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
+    if (room.activeTeam === body.team && room.phase === 'PLAYING') {
+      room.phase = 'PAUSED';
+      sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });
+    }
+    closeCaptainClients(room, body.team);
+    room.captainTokens[body.team] = null;
+    room.captainClaimedAt[body.team] = null;
+    broadcastState(room);
+    return json(res, 200, { ok: true });
   }
   if (action === 'host:endGame') {
     if (['LOBBY', 'FINISHED'].includes(room.phase)) return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
@@ -296,6 +304,7 @@ async function handleApi(req, res, url) {
   if (action === 'host:restart') {
     if (room.phase !== 'FINISHED') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
     room.history = []; room.playlist = makePlaylist(room.gameLength); room.scores = { A: 0, B: 0 }; room.round = 'easy'; loadSong(room, 0);
+    if (room.currentIndex === 0 && room.phase === 'ROUND_INTRO') room.phase = 'READY';
     broadcastState(room); return json(res, 200, { ok: true });
   }
   if (action === 'display:audioReady') { room.audioReady = Boolean(body.ready); broadcastState(room); return json(res, 200, { ok: true }); }
@@ -326,7 +335,10 @@ async function handleApi(req, res, url) {
   }
   if (action === 'captain:pause') {
     if (room.activeTeam !== body.team || room.phase !== 'PLAYING') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
-    sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq }); return json(res, 200, { ok: true });
+    room.phase = 'PAUSED';
+    sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });
+    broadcastState(room);
+    return json(res, 200, { ok: true });
   }
   if (action === 'display:audioProgress') {
     if (Number(body.seq) !== room.playbackSeq || !['PLAYING', 'PAUSED'].includes(room.phase) || room.awaitingReplay) return json(res, 200, { ok: true, ignored: true });
@@ -414,7 +426,20 @@ function handleEvents(req, res, url) {
   if (role === 'host' && !hostOk(room, suppliedToken)) { res.writeHead(403); return res.end(); }
   if (role === 'captain' && !captainOk(room, team, suppliedToken)) { res.writeHead(403); return res.end(); }
   if (!['display', 'host', 'captain'].includes(role)) { res.writeHead(400); return res.end(); }
-  if (role === 'display' && [...room.clients].some((client) => client.role === 'display')) { res.writeHead(409); return res.end(); }
+  if (role === 'display') {
+    const previousDisplays = [...room.clients].filter((client) => client.role === 'display');
+    if (previousDisplays.length) {
+      if (room.phase === 'PLAYING') {
+        sendDisplayEvent(room, 'audio-pause', { seq: room.playbackSeq });
+        room.phase = 'PAUSED';
+      }
+      room.audioReady = false;
+      for (const previous of previousDisplays) {
+        room.clients.delete(previous);
+        try { previous.res.end(); } catch {}
+      }
+    }
+  }
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
   res.write(': connected\n\n');
   const client = { res, role, team: role === 'captain' ? team : null }; room.clients.add(client); sendSse(client, 'state', publicState(room, role, client.team)); broadcastState(room);

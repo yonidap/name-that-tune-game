@@ -1,21 +1,19 @@
 const routeParts = location.pathname.split('/').filter(Boolean);
 const isCaptainRoute = routeParts[0] === 'join' && routeParts[1];
 const isHostRoute = routeParts[0] === 'control' && routeParts[1];
-let initialEasyAdvanceInFlight = false;
-let initialEasyRetryTimer = null;
-
 function captainSession() {
   if (!isCaptainRoute) return null;
   const roomCode = String(routeParts[1]).toUpperCase();
   const activeTeam = localStorage.getItem(`ntt-captain-active-${roomCode}`);
-  const teams = ['A','B'].includes(activeTeam) ? [activeTeam, activeTeam === 'A' ? 'B' : 'A'] : ['A','B'];
-  for (const team of teams) {
+  const read = (team) => {
     try {
       const saved = JSON.parse(localStorage.getItem(`ntt-captain-${roomCode}-${team}`) || 'null');
-      if (saved?.captainToken) return { roomCode, team, token: saved.captainToken };
-    } catch {}
-  }
-  return null;
+      return saved?.captainToken ? { roomCode, team, token:saved.captainToken } : null;
+    } catch { return null; }
+  };
+  if (['A','B'].includes(activeTeam)) return read(activeTeam);
+  const sessions = ['A','B'].map(read).filter(Boolean);
+  return sessions.length === 1 ? sessions[0] : null;
 }
 
 function hostSession() {
@@ -169,24 +167,6 @@ function syncCaptainControls() {
   if (!offline && reconnect) reconnect.remove();
 }
 
-async function ensureInitialEasyReady() {
-  if (!isHostRoute) return;
-  const phase = document.body.dataset.phase || '';
-  const round = document.body.dataset.round || '';
-  if (phase !== 'ROUND_INTRO' || round !== 'easy') {
-    initialEasyAdvanceInFlight = false;
-    clearTimeout(initialEasyRetryTimer);
-    initialEasyRetryTimer = null;
-    return;
-  }
-  if (initialEasyAdvanceInFlight) return;
-  initialEasyAdvanceInFlight = true;
-  const result = await sendHostAction('host:beginRound');
-  initialEasyAdvanceInFlight = false;
-  if (result?.ok || result?.error === 'NOT_ALLOWED') return;
-  clearTimeout(initialEasyRetryTimer);
-  initialEasyRetryTimer = setTimeout(() => ensureInitialEasyReady(), 500);
-}
 
 function syncHostControls() {
   if (!isHostRoute) return;
@@ -196,7 +176,6 @@ function syncHostControls() {
   const shell = document.querySelector('.controller-shell');
   if (activeGame && shell && !existing) shell.appendChild(makeEndGameButton());
   if (!activeGame && existing) existing.remove();
-  ensureInitialEasyReady();
 }
 
 if (isCaptainRoute || isHostRoute) {
@@ -209,6 +188,5 @@ if (isCaptainRoute || isHostRoute) {
   syncControls();
   window.addEventListener('beforeunload', () => {
     observer.disconnect();
-    clearTimeout(initialEasyRetryTimer);
   });
 }
