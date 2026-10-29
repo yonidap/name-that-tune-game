@@ -28,16 +28,21 @@ function hostSession() {
 
 async function sendAction(session, action, extra = {}) {
   if (!session) return { ok:false, error:'NO_SESSION' };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
     const response = await fetch('/api/action', {
       method: 'POST',
       headers: { 'content-type':'application/json' },
-      body: JSON.stringify({ action, roomCode:session.roomCode, token:session.token, ...(session.team ? { team:session.team } : {}), ...extra })
+      body: JSON.stringify({ action, roomCode:session.roomCode, token:session.token, ...(session.team ? { team:session.team } : {}), ...extra }),
+      signal: controller.signal
     });
     const result = await response.json().catch(() => ({ ok:false, error:'BAD_RESPONSE' }));
     return { ...result, ok:Boolean(response.ok && result?.ok) };
   } catch {
     return { ok:false, error:'NETWORK_ERROR' };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -50,11 +55,11 @@ async function sendCaptainAction(action, button) {
   return result;
 }
 
-async function sendHostAction(action, button) {
+async function sendHostAction(action, button, extra = {}) {
   const session = hostSession();
   if (!session || button?.disabled) return { ok:false, error:'NO_SESSION' };
   if (button) button.disabled = true;
-  const result = await sendAction(session, action);
+  const result = await sendAction(session, action, extra);
   if (!result.ok && button?.isConnected) button.disabled = false;
   return result;
 }
@@ -135,6 +140,16 @@ function makeEndGameButton() {
   return button;
 }
 
+function makeFinalHostTools() {
+  const section = document.createElement('section');
+  section.id = 'final-host-tools';
+  section.className = 'controller-card final-host-tools';
+  section.innerHTML = `<div class="micro-label">FINAL SCORE TOOLS</div><div class="controller-actions"><button class="secondary-control" id="final-undo">UNDO LAST</button></div><details class="score-tools" open><summary>SCORE CORRECTION</summary><div class="score-adjust"><button data-final-score="A" data-delta="-1">A −1</button><button data-final-score="A" data-delta="1">A +1</button><button data-final-score="B" data-delta="-1">B −1</button><button data-final-score="B" data-delta="1">B +1</button></div></details>`;
+  section.querySelector('#final-undo')?.addEventListener('click', (event) => sendHostAction('host:undo', event.currentTarget));
+  section.querySelectorAll('[data-final-score]').forEach((button) => button.addEventListener('click', () => sendHostAction('host:adjustScore', button, { team:button.dataset.finalScore, delta:Number(button.dataset.delta) })));
+  return section;
+}
+
 function syncCaptainControls() {
   if (!isCaptainRoute) return;
   const phase = document.body.dataset.phase || '';
@@ -173,9 +188,12 @@ function syncHostControls() {
   const phase = document.body.dataset.phase || '';
   const activeGame = phase && !['NONE','LOBBY','FINISHED'].includes(phase);
   const existing = document.querySelector('#end-game');
+  const finalTools = document.querySelector('#final-host-tools');
   const shell = document.querySelector('.controller-shell');
   if (activeGame && shell && !existing) shell.appendChild(makeEndGameButton());
   if (!activeGame && existing) existing.remove();
+  if (phase === 'FINISHED' && shell && !finalTools) shell.appendChild(makeFinalHostTools());
+  if (phase !== 'FINISHED' && finalTools) finalTools.remove();
 }
 
 if (isCaptainRoute || isHostRoute) {

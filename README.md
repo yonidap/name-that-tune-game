@@ -9,7 +9,7 @@ A two-team music guessing game with a dedicated audience/game screen, a host-con
 - Separate host-controller phone protected by a 4-digit room PIN.
 - Join by QR code or 4-character room code.
 - Easy / Medium / Hard rounds.
-- Game lengths: Quick Hit (15 songs), Main Event (21), Full Battle (40).
+- Game lengths: Quick Hit (15 songs), Main Event (21), Full Battle (44).
 - Turns alternate between teams; Medium starts with the opposite team to reduce first-player bias.
 - Captains can PLAY, STOP, continue the current play, and LOCK ANSWER.
 - STOP only pauses the audio; thinking time does not reduce the score.
@@ -55,14 +55,14 @@ When the active team locks an answer, the host marks it correct or wrong.
 - If the main game screen disconnects during playback, the room fails safe to `PAUSED` and audio readiness is revoked.
 - After a display refresh, the display session is validated before restoration and speakers must be enabled again.
 - Host and captain phones can reconnect using their saved tokens.
-- The host can reset a stuck captain slot while the game is still in the lobby.
+- The host can reset a stuck captain slot during the lobby or an active game; an active playback is paused before that slot is released.
 - `UNDO` restores the previous meaningful game state. For example, undo immediately after `LOCK ANSWER` returns to the paused decision state instead of jumping to an earlier song.
 - `PLAY AGAIN` starts a fresh shuffled game with the same room/controllers and clears the old score/history.
 - The main display also offers `NEW ROOM` after the game ends.
 
 ## Audio handling
 
-Copyrighted music is **not committed to this repository**. Put pre-cut snippets in `public/audio/` using the filenames defined in `data/songs.js`.
+The game expects pre-cut snippets in `public/audio/` using the filenames defined in `data/songs.js`; reveal clips live in `public/audio/reveal/` with matching filenames.
 
 Example:
 
@@ -106,13 +106,12 @@ CI runs both commands on every push and pull request. The integration test exerc
 - steal timeout;
 - display disconnect fail-safe;
 - captain-slot reset;
-- the 40-song bank and 12/14/14 difficulty split.
+- the 44-song bank and 14/18/12 difficulty split.
 
 ## State machine
 
 ```text
 LOBBY
-  → ROUND_INTRO
   → READY ↔ PLAYING ↔ PAUSED
   → ANSWER_LOCKED
       ├─ correct → REVEAL
@@ -127,13 +126,15 @@ LOBBY
 The app intentionally stays small:
 
 - `src/server.js` — the single authoritative game server/state machine.
-- `public/game.js` — the single main browser controller for audience, host, and captain modes.
+- `public/game.js` — the main browser controller for audience, host, and captain modes.
+- `public/reveal-audio.js` — reveal-clip playback and auto-advance.
+- `public/interaction-ui.js` — supplemental captain/host recovery controls.
 - HTTP POST actions — client commands.
 - Server-Sent Events (SSE) — real-time server-to-client state and audio commands.
 - `data/songs.js` — song metadata and snippet durations.
 - `test/integration.test.js` — end-to-end state-machine audit.
 
-There is no separate replay patch layer or second game server.
+There is one authoritative game server; the supplemental browser scripts do not own game state.
 
 ## Production limitations
 

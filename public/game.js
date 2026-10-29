@@ -25,6 +25,8 @@ let usingDemoAudio = false;
 let restoreRetryTimer = null;
 let restoreInFlight = false;
 let restoreAttempt = 0;
+let audioLoadGeneration = 0;
+let playbackCommandGeneration = 0;
 
 function esc(value = '') {
   return String(value).replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -62,9 +64,12 @@ function scoreCards(s) {
   </div>`;
 }
 function api(path, payload = {}) {
-  return fetch(path, { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify(payload) })
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  return fetch(path, { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify(payload), signal:controller.signal })
     .then(async (res) => res.json().catch(() => ({ ok:false, error:'BAD_RESPONSE' })))
-    .catch(() => ({ ok:false, error:'NETWORK_ERROR' }));
+    .catch(() => ({ ok:false, error:'NETWORK_ERROR' }))
+    .finally(() => clearTimeout(timeout));
 }
 function emit(action, payload = {}) {
   const token = mode === 'display' ? displayToken : mode === 'host' ? hostToken : captainToken;
@@ -92,8 +97,19 @@ function connectEvents() {
   };
   eventSource.onerror = () => { document.body.dataset.connection = 'offline'; };
   eventSource.addEventListener('state', (event) => {
+    const previous = state;
     const next = JSON.parse(event.data);
-    const patch = canPatchLive(state, next);
+    if (mode === 'display' && previous) {
+      const leftPlayback = next.phase !== 'PLAYING' && (previous.phase === 'PLAYING' || activePlaybackSeq);
+      const changedSong = previous.currentIndex !== next.currentIndex;
+      if (leftPlayback || changedSong) {
+        playbackCommandGeneration += 1;
+        audio.pause();
+        clearInterval(progressTimer); progressTimer = null;
+        activePlaybackSeq = 0;
+      }
+    }
+    const patch = canPatchLive(previous, next);
     state = next;
     roomCode = state.roomCode;
     if (patch) updateLiveUi(); else render();
@@ -110,9 +126,12 @@ function clearDisplaySession() {
   localStorage.removeItem('ntt-display');
   eventSource?.close();
   eventSource = null;
+  audioLoadGeneration += 1;
+  playbackCommandGeneration += 1;
   audio.pause();
   clearInterval(progressTimer);
   progressTimer = null;
+  if (demoUrl) { URL.revokeObjectURL(demoUrl); demoUrl = null; }
   state = null; roomCode = ''; displayToken = ''; hostPin = ''; audioUnlocked = false; currentAudioKey = ''; currentAudioPromise = null; activePlaybackSeq = 0;
   history.replaceState({}, '', '/host');
   render();
@@ -265,11 +284,18 @@ function displayGame(s) {
 function bindDisplayControls() {
   document.querySelector('#enable-audio')?.addEventListener('click', async () => {
     try {
+      audioLoadGeneration += 1;
+      playbackCommandGeneration += 1;
+      clearInterval(progressTimer); progressTimer = null; activePlaybackSeq = 0;
       const Ctx = window.AudioContext || window.webkitAudioContext;
       const ctx = new Ctx(); await ctx.resume();
       const osc = ctx.createOscillator(); const gain = ctx.createGain(); gain.gain.value = .00001; osc.connect(gain).connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + .03);
       const previousVolume = audio.volume;
-      audio.volume = 0; audio.src = createDemoTone(.08); audio.load(); await audio.play(); audio.pause(); audio.currentTime = 0; audio.volume = previousVolume; currentAudioKey = ''; currentAudioPromise = null;
+      audio.volume = 0; audio.src = createDemoTone(.08); audio.load(); await audio.play(); audio.pause(); audio.currentTime = 0; audio.volume = previousVolume;
+      try { await ctx.close(); } catch {}
+      audioLoadGeneration += 1;
+      playbackCommandGeneration += 1;
+      currentAudioKey = ''; currentAudioPromise = null;
       audioUnlocked = true;
       await emit('display:audioReady', { ready:true });
       render();
@@ -436,6 +462,7 @@ function createDemoTone(duration) {
   return demoUrl;
 }
 async function waitForAudioReady(timeoutMs = 6000) {
+  if (audio.readyState >= 3) return true;
   return new Promise((resolve) => {
     let settled = false;
     const done = (value) => { if (settled) return; settled = true; cleanup(); resolve(value); };
@@ -448,28 +475,36 @@ async function waitForAudioReady(timeoutMs = 6000) {
   });
 }
 async function prepareAudio(song) {
-  if (!song || mode !== 'display') return;
+  if (!song || mode !== 'display') return false;
   const key = `${song.id}:${song.audioFile}`;
   if (currentAudioKey === key && currentAudioPromise) return currentAudioPromise;
+  const generation = ++audioLoadGeneration;
   currentAudioKey = key;
-  currentAudioPromise = (async () => {
-    usingDemoAudio = false;
+  const promise = (async () => {
+    let fallback = false;
     audio.src = song.audioFile; audio.load();
-    const ok = await waitForAudioReady(6000);
+    let ok = await waitForAudioReady(6000);
+    if (generation !== audioLoadGeneration || currentAudioKey !== key) return false;
     if (!ok) {
-      usingDemoAudio = true;
+      fallback = true;
       audio.src = createDemoTone(song.duration);
       audio.load();
-      await waitForAudioReady(1200);
+      ok = await waitForAudioReady(1200);
+      if (generation !== audioLoadGeneration || currentAudioKey !== key) return false;
     }
-    document.body.dataset.demoAudio = usingDemoAudio ? 'true' : 'false';
-    await emit('display:audioStatus', { songId:song.id, fallback:usingDemoAudio });
+    usingDemoAudio = fallback;
+    document.body.dataset.demoAudio = fallback ? 'true' : 'false';
+    await emit('display:audioStatus', { songId:song.id, fallback });
+    return ok;
   })();
-  return currentAudioPromise;
+  currentAudioPromise = promise;
+  return promise;
 }
 function syncAudioForState() {
   if (mode !== 'display' || !state?.song) return;
-  prepareAudio(state.song).then(() => {
+  const songId = state.song.id;
+  prepareAudio(state.song).then((ready) => {
+    if (!ready || state?.song?.id !== songId) return;
     if (state.phase !== 'PLAYING' && Math.abs(audio.currentTime - Number(state.listenedSeconds || 0)) > .35) {
       try { audio.currentTime = Math.min(Number(state.listenedSeconds || 0), state.song.duration || 999); } catch {}
     }
@@ -477,38 +512,61 @@ function syncAudioForState() {
 }
 async function handleAudioPlay({ startAt, seq }) {
   if (mode !== 'display' || !state?.song) return;
-  await prepareAudio(state.song);
+  const song = state.song;
+  const songId = song.id;
+  const commandGeneration = ++playbackCommandGeneration;
+  activePlaybackSeq = Number(seq) || 0;
+  const ready = await prepareAudio(song);
+  if (!ready || commandGeneration !== playbackCommandGeneration || state?.song?.id !== songId) {
+    if (activePlaybackSeq === Number(seq)) activePlaybackSeq = 0;
+    return;
+  }
   try {
-    activePlaybackSeq = Number(seq) || 0;
-    audio.currentTime = Math.min(Number(startAt) || 0, state.song.duration || 999);
+    audio.currentTime = Math.min(Number(startAt) || 0, song.duration || 999);
     await audio.play();
+    if (commandGeneration !== playbackCommandGeneration || state?.song?.id !== songId) {
+      audio.pause();
+      if (activePlaybackSeq === Number(seq)) activePlaybackSeq = 0;
+      return;
+    }
     clearInterval(progressTimer);
     progressTimer = setInterval(() => {
       const configuredEnd = Number(state?.song?.duration || 0);
       if (configuredEnd > 0 && audio.currentTime >= configuredEnd - .03) {
         audio.pause();
         clearInterval(progressTimer); progressTimer = null;
-        emit('display:audioEnded', { position:configuredEnd, seq:activePlaybackSeq });
+        const endedSeq = activePlaybackSeq;
+        activePlaybackSeq = 0;
+        if (endedSeq) emit('display:audioEnded', { position:configuredEnd, seq:endedSeq });
         return;
+      }
+      if (commandGeneration !== playbackCommandGeneration || state?.song?.id !== songId) {
+        audio.pause(); clearInterval(progressTimer); progressTimer = null; return;
       }
       emit('display:audioProgress', { position:audio.currentTime, paused:audio.paused, seq:activePlaybackSeq });
     }, 250);
   } catch (error) {
+    if (commandGeneration !== playbackCommandGeneration) return;
     console.error(error);
+    activePlaybackSeq = 0;
     await emit('display:playbackFailed', { seq:Number(seq) || 0 });
     alert('Playback was blocked. Enable speakers again on the game screen.');
   }
 }
 function handleAudioPause({ seq } = {}) {
   if (mode !== 'display') return;
+  playbackCommandGeneration += 1;
   audio.pause();
   clearInterval(progressTimer); progressTimer = null;
   const currentSeq = Number(seq) || activePlaybackSeq;
-  emit('display:audioProgress', { position:audio.currentTime, paused:true, seq:currentSeq });
+  activePlaybackSeq = 0;
+  if (currentSeq) emit('display:audioProgress', { position:audio.currentTime, paused:true, seq:currentSeq });
 }
 audio.addEventListener('ended', () => {
   clearInterval(progressTimer); progressTimer = null;
-  if (mode === 'display' && activePlaybackSeq) emit('display:audioEnded', { position:audio.currentTime, seq:activePlaybackSeq });
+  const endedSeq = activePlaybackSeq;
+  activePlaybackSeq = 0;
+  if (mode === 'display' && endedSeq) emit('display:audioEnded', { position:audio.currentTime, seq:endedSeq });
 });
 
 function readStoredJson(key) {
