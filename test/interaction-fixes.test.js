@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import http from 'node:http';
 
 process.env.STEAL_MS = '1000';
@@ -106,6 +107,15 @@ try {
   state = (await post('/api/host/join', { roomCode, hostToken })).body.state;
   assert.equal(state.phase, 'REVEAL');
   assert.equal(state.stealDeadline, null);
+
+  const interactionUi = fs.readFileSync('public/interaction-ui.js', 'utf8');
+  assert.doesNotMatch(
+    interactionUi,
+    /attributeFilter:\s*\[[^\]]*['"]disabled['"]/,
+    'MutationObserver must not watch disabled because captain control sync mutates disabled itself'
+  );
+  assert.match(interactionUi, /dontKnow\.disabled !== normalLock\.disabled/, 'normal captain control sync must guard disabled writes');
+  assert.match(interactionUi, /dontKnowSteal\.disabled !== stealDisabled/, 'steal captain control sync must guard disabled writes');
 
   console.log('Interaction fixes passed');
 } finally {
