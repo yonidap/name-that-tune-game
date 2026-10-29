@@ -657,4 +657,12 @@ async function restoreSession() {
   }
 }
 
+function startDisplayKeepAlive() {
+  if (mode !== 'display') return;
+  const ping = () => fetch('/api/health', { method:'GET', cache:'no-store' }).catch(() => {});
+  ping();
+  setInterval(ping, 4 * 60_000);
+}
+
+startDisplayKeepAlive();
 restoreSession();

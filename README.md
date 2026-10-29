@@ -141,6 +141,14 @@ The app intentionally stays small:
 
 There is one authoritative game server; the supplemental browser scripts do not own game state.
 
+## Party-session durability
+
+The main display sends an inbound health request every four minutes so a Render Free web service does not go idle while the display is open.
+
+For restart-safe room recovery, set `GAME_STATE_FILE` to a path on durable storage (for example `/var/data/name-that-tune-state.json` on a Render Persistent Disk). Every authoritative state change is checkpointed atomically. On process restart, rooms, playlist order, scores, host/captain tokens, current song and playback progress are restored. A room that was actively playing comes back as `PAUSED` so it never resumes audio unexpectedly. Audio readiness is intentionally revoked until the display reconnects.
+
+Without durable storage, a provider-level restart can still erase in-memory room state. Render Free web services cannot attach Persistent Disks.
+
 ## Production limitations
 
 The current MVP stores rooms **in the Node process memory**. A Render restart, redeploy, or process crash will erase active rooms. This is acceptable for development and a single party session, but it is the main remaining architectural limitation. Do not deploy changes during an active game. A future hardened version should persist room snapshots in Redis/Postgres.

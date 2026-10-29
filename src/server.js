@@ -10,7 +10,9 @@ const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, '..', 'public');
 const PORT = Number(process.env.PORT || 3000);
 const STEAL_MS = Math.max(100, Number(process.env.STEAL_MS || 10_000));
+const GAME_STATE_FILE = String(process.env.GAME_STATE_FILE || '').trim();
 const rooms = new Map();
+let persistTimer = null;
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const GAME_LENGTHS = {
   short: { easy: 5, medium: 5, hard: 5 },
@@ -92,6 +94,63 @@ function cleanName(value, fallback) {
   const text = String(value || '').replace(/\s+/g, ' ').trim().slice(0, 24);
   return text || fallback;
 }
+function serializableRoom(room) {
+  const { clients, stealTimer, ...saved } = room;
+  return saved;
+}
+function persistRoomsNow() {
+  if (!GAME_STATE_FILE) return;
+  const directory = path.dirname(GAME_STATE_FILE);
+  fs.mkdirSync(directory, { recursive: true });
+  const tempFile = GAME_STATE_FILE + '.tmp';
+  const payload = JSON.stringify({ version: 1, savedAt: Date.now(), rooms: [...rooms.values()].map(serializableRoom) });
+  fs.writeFileSync(tempFile, payload, 'utf8');
+  fs.renameSync(tempFile, GAME_STATE_FILE);
+}
+function schedulePersist() {
+  if (!GAME_STATE_FILE) return;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    try { persistRoomsNow(); } catch (error) { console.error('Could not persist game state:', error); }
+  }, 120);
+  persistTimer.unref?.();
+}
+function hydrateRoom(saved) {
+  if (!saved || typeof saved !== 'object' || !saved.code || !saved.displayToken || !Array.isArray(saved.playlist)) return null;
+  const room = {
+    ...saved,
+    captainTokens: { A: saved.captainTokens?.A || null, B: saved.captainTokens?.B || null },
+    captainClaimedAt: { A: saved.captainClaimedAt?.A || null, B: saved.captainClaimedAt?.B || null },
+    teamNames: { A: cleanName(saved.teamNames?.A, 'Team A'), B: cleanName(saved.teamNames?.B, 'Team B') },
+    scores: { A: Math.max(0, Number(saved.scores?.A) || 0), B: Math.max(0, Number(saved.scores?.B) || 0) },
+    history: Array.isArray(saved.history) ? saved.history.slice(-40) : [],
+    clients: new Set(), stealTimer: null, audioReady: false
+  };
+  if (room.phase === 'PLAYING') room.phase = 'PAUSED';
+  if (room.phase === 'STEAL') {
+    if (!room.stealDeadline || room.stealDeadline <= Date.now()) {
+      room.phase = 'REVEAL'; room.revealed = true; room.stealDeadline = null;
+    } else {
+      scheduleStealExpiry(room);
+    }
+  }
+  return room;
+}
+function loadPersistedRooms() {
+  if (!GAME_STATE_FILE || !fs.existsSync(GAME_STATE_FILE)) return;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(GAME_STATE_FILE, 'utf8'));
+    const savedRooms = Array.isArray(parsed?.rooms) ? parsed.rooms : [];
+    for (const saved of savedRooms) {
+      const room = hydrateRoom(saved);
+      if (room) rooms.set(room.code, room);
+    }
+    if (rooms.size) console.log('Restored ' + rooms.size + ' game room(s) from durable state.');
+  } catch (error) {
+    console.error('Could not restore persisted game state:', error);
+  }
+}
 function touch(room) { room.updatedAt = Date.now(); }
 function connectionStatus(room) {
   const clients = [...room.clients];
@@ -133,7 +192,7 @@ function publicState(room, role, team = null) {
   return { ...common, song: song ? { difficulty: song.difficulty, duration: song.duration } : null };
 }
 function sendSse(client, event, data) { try { client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {} }
-function broadcastState(room) { touch(room); for (const client of room.clients) sendSse(client, 'state', publicState(room, client.role, client.team)); }
+function broadcastState(room) { touch(room); schedulePersist(); for (const client of room.clients) sendSse(client, 'state', publicState(room, client.role, client.team)); }
 function sendDisplayEvent(room, event, data = {}) { for (const client of room.clients) if (client.role === 'display') sendSse(client, event, data); }
 function clearStealTimer(room) { if (room.stealTimer) clearTimeout(room.stealTimer); room.stealTimer = null; }
 function reveal(room) { clearStealTimer(room); room.phase = 'REVEAL'; room.revealed = true; room.stealDeadline = null; }
@@ -213,7 +272,7 @@ function closeCaptainClients(room, team) {
 }
 
 async function handleApi(req, res, url) {
-  if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true });
+  if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, statePersistence: Boolean(GAME_STATE_FILE), rooms: rooms.size });
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   let body;
   try { body = await readJson(req); } catch { return json(res, 400, { ok: false, error: 'INVALID_JSON' }); }
@@ -231,6 +290,7 @@ async function handleApi(req, res, url) {
       createdAt: now, updatedAt: now
     };
     rooms.set(code, room);
+    schedulePersist();
     return json(res, 200, { ok: true, roomCode: code, displayToken, hostPin, state: publicState(room, 'display') });
   }
   if (url.pathname === '/api/display/resume') {
@@ -467,6 +527,8 @@ function serveStatic(req, res, url) {
     res.writeHead(200, headers); if (req.method === 'HEAD') return res.end(); fs.createReadStream(filePath).pipe(res);
   });
 }
+loadPersistedRooms();
+
 export function createServer() {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -484,7 +546,16 @@ if (isMain) {
   const server = createServer();
   setInterval(() => {
     const staleBefore = Date.now() - 12 * 60 * 60 * 1000;
-    for (const [code, room] of rooms.entries()) if (room.updatedAt < staleBefore && room.clients.size === 0) { clearStealTimer(room); rooms.delete(code); }
+    let changed = false;
+    for (const [code, room] of rooms.entries()) if (room.updatedAt < staleBefore && room.clients.size === 0) { clearStealTimer(room); rooms.delete(code); changed = true; }
+    if (changed) schedulePersist();
   }, 30 * 60 * 1000).unref();
+  const shutdown = () => {
+    try { clearTimeout(persistTimer); persistTimer = null; persistRoomsNow(); } catch (error) { console.error('Final state checkpoint failed:', error); }
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
   server.listen(PORT, () => console.log(`Name That Tune running on http://localhost:${PORT}`));
 }
