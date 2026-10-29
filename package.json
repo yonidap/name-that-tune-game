@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check public/game.js && node --check public/reveal-audio.js && node --check public/interaction-ui.js && node --check data/songs.js && node --check test/integration.test.js && node --check test/reveal-auto.test.js && node --check test/audio-mapping.test.js && node --check test/interaction-fixes.test.js && node --check test/style-architecture.test.js && node --check test/captain-session.test.js",
-    "test": "node test/integration.test.js && node test/reveal-auto.test.js && node test/audio-mapping.test.js && node test/interaction-fixes.test.js && node test/style-architecture.test.js && node test/captain-session.test.js"
+    "check": "node --check src/server.js && node --check public/game.js && node --check public/reveal-audio.js && node --check public/interaction-ui.js && node --check data/songs.js && node --check test/integration.test.js && node --check test/reveal-auto.test.js && node --check test/audio-mapping.test.js && node --check test/interaction-fixes.test.js && node --check test/style-architecture.test.js && node --check test/captain-session.test.js && node --check test/resilience-audit.test.js",
+    "test": "node test/integration.test.js && node test/reveal-auto.test.js && node test/audio-mapping.test.js && node test/interaction-fixes.test.js && node test/style-architecture.test.js && node test/captain-session.test.js && node test/resilience-audit.test.js"
   },
   "engines": { "node": ">=20" }
 }
