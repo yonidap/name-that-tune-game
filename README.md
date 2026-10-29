@@ -51,6 +51,9 @@ When the active team locks an answer, the host marks it correct or wrong.
 ## Resilience and controls
 
 - Server-side state is authoritative for phase, score, playback count, timing, and permissions.
+- Host and captain phones fetch authenticated authoritative snapshots every 750 ms. They do not depend on a long-lived SSE connection for game state.
+- Every room state carries a monotonic `revision`; clients reject older snapshots so a delayed response cannot roll a phone back to an earlier phase.
+- The main display keeps SSE because audio play/pause commands must remain realtime and fail-safe.
 - Stale audio progress events are ignored with a per-playback sequence number.
 - If the main game screen disconnects during playback, the room fails safe to `PAUSED` and audio readiness is revoked.
 - After a display refresh, the display session is validated before restoration and speakers must be enabled again.
@@ -94,10 +97,12 @@ npm run check
 npm test
 ```
 
-CI runs both commands on every push and pull request. The integration test exercises the real HTTP/SSE state machine, including:
+CI runs both commands on every push and pull request. The integration tests exercise the real HTTP/SSE state machine, including:
 
 - room creation and reconnect;
 - server-side start gating;
+- phone-only authoritative polling with no Host/Captain SSE dependency;
+- monotonic room revisions and stale-state rejection;
 - 10 → 5 → 2 scoring across two playbacks;
 - pause/continue behavior;
 - rejection of a third playback;
@@ -105,7 +110,7 @@ CI runs both commands on every push and pull request. The integration test exerc
 - correct scoring;
 - steal timeout;
 - display disconnect fail-safe;
-- captain-slot reset;
+- captain-slot reset and replacement-phone recovery;
 - manual end-game undo;
 - client audio-race guards and final-score recovery controls;
 - full process-restart recovery from a persisted mid-game checkpoint;
@@ -132,13 +137,18 @@ The app intentionally stays small:
 - `public/game.js` — the main browser controller for audience, host, and captain modes.
 - `public/reveal-audio.js` — reveal-clip playback and auto-advance.
 - `public/interaction-ui.js` — supplemental captain/host recovery controls.
-- HTTP POST actions — client commands.
-- Server-Sent Events (SSE) — real-time server-to-client state and audio commands.
+- HTTP POST actions — client commands and authenticated Host/Captain state polling.
+- Server-Sent Events (SSE) — realtime state/audio transport for the main display only.
 - `data/songs.js` — song metadata and snippet durations.
 - `test/integration.test.js` — end-to-end state-machine audit.
 - `test/durability.test.js` — process-restart persistence audit.
+- `test/phone-authority.test.js` — verifies Host/Captain phones work without SSE and still receive the first READY turn correctly.
 
-There is one authoritative game server; the supplemental browser scripts do not own game state.
+There is one authoritative game server; browser clients never own game state.
+
+## Deployment identity check
+
+`GET /api/health` reports `buildId` and `instanceId` in addition to health/persistence status. On Render, `buildId` is derived from `RENDER_GIT_COMMIT`. Use it before a live test to confirm the public site is actually serving the expected Git commit; `instanceId` changes whenever the Node process restarts.
 
 ## Party-session durability
 
