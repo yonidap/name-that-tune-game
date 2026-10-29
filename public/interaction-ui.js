@@ -78,7 +78,7 @@ function makeDontKnowButton(id, disabled) {
 async function reconnectCaptain(button) {
   const session = captainSession();
   if (!session) {
-    location.reload();
+    window.dispatchEvent(new CustomEvent('ntt:captain-reconnect-request'));
     return;
   }
   if (button) button.disabled = true;

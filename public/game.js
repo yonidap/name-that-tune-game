@@ -688,6 +688,14 @@ async function restoreSession() {
   }
 }
 
+window.addEventListener('ntt:captain-reconnect-request', async () => {
+  if (mode !== 'captain' || !roomCode || !['A','B'].includes(team) || !captainToken) return;
+  const result = await api('/api/captain/join', { roomCode, team, captainToken, forceReconnect:true });
+  if (!result?.ok || !result.captainToken || !result.state) return;
+  captainToken = result.captainToken; state = result.state;
+  finishRestore(); saveCaptain(); connectEvents(); render();
+});
+
 window.addEventListener('ntt:captain-reconnected', (event) => {
   if (mode !== 'captain') return;
   const detail = event.detail || {};

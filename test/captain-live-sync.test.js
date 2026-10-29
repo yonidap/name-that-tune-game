@@ -70,7 +70,8 @@ try {
   assert.match(client, /ntt:captain-reconnected/);
   const interaction = fs.readFileSync('public/interaction-ui.js', 'utf8');
   assert.match(interaction, /forceReconnect:true/);
-  assert.doesNotMatch(interaction, /result\.captainToken[\s\S]{0,500}location\.reload\(\)/);
+  assert.doesNotMatch(interaction, /location\.reload\(\)/, 'captain reconnect must never reload the page');
+  assert.match(client, /ntt:captain-reconnect-request/);
 
   console.log('Captain live-sync recovery audit passed');
 } finally {
