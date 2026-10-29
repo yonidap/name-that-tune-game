@@ -36,3 +36,5 @@ jobs:
           git add -A
           git commit -m "Make phone state polling authoritative" || exit 0
           git push origin HEAD:main
+
+# trigger validation after workflow creation
