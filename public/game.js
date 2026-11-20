@@ -20,6 +20,10 @@ let currentAudioPromise = null;
 let countdownTimer = null;
 let eventSource = null;
 let selectedGameLength = 'normal';
+let customSongCatalog = null;
+let customCatalogPromise = null;
+let customSelectedIds = new Set();
+let customSearchQuery = '';
 let activePlaybackSeq = 0;
 let usingDemoAudio = false;
 let restoreRetryTimer = null;
@@ -220,12 +224,146 @@ function renderHome() {
 const GAME_MODES = [
   { value:'short', icon:'⚡', title:'QUICK HIT', songs:'15', note:'Fast & loud' },
   { value:'normal', icon:'♪', title:'MAIN EVENT', songs:'21', note:'Party pick', featured:true },
-  { value:'full', icon:'♛', title:'FULL BATTLE', songs:'44', note:'No mercy' }
+  { value:'full', icon:'♛', title:'FULL BATTLE', songs:'44', note:'No mercy' },
+  { value:'custom', icon:'✦', title:'CUSTOM SET', songs:'0', note:'Pick your tunes' }
 ];
+const DIFFICULTIES = ['easy', 'medium', 'hard'];
 function gameModeCards() {
-  return `<div class="mode-picker" role="radiogroup" aria-label="Game length">${GAME_MODES.map((item) => `<button type="button" class="mode-card ${item.featured ? 'featured' : ''} ${selectedGameLength === item.value ? 'selected' : ''}" data-mode-value="${item.value}" role="radio" aria-checked="${selectedGameLength === item.value}">
-    ${item.featured ? '<span class="mode-pick">PARTY PICK</span>' : ''}<span class="mode-icon">${item.icon}</span><b>${item.title}</b><strong>${item.songs}</strong><em>SONGS</em><small>${item.note}</small>
-  </button>`).join('')}</div>`;
+  return '<div class="mode-picker" role="radiogroup" aria-label="Game mode">' + GAME_MODES.map((item) => {
+    const count = item.value === 'custom' ? customSelectedIds.size : item.songs;
+    return '<button type="button" class="mode-card ' + (item.featured ? 'featured' : '') +
+      (selectedGameLength === item.value ? ' selected' : '') + '" data-mode-value="' + item.value +
+      '" role="radio" aria-checked="' + (selectedGameLength === item.value) + '">' +
+      (item.featured ? '<span class="mode-pick">PARTY PICK</span>' : '') +
+      '<span class="mode-icon">' + item.icon + '</span><b>' + item.title + '</b><strong' +
+      (item.value === 'custom' ? ' id="custom-mode-count"' : '') + '>' + count +
+      '</strong><em>SONGS</em><small>' + item.note + '</small></button>';
+  }).join('') + '</div>';
+}
+function searchSongText(value) {
+  return String(value ?? '').normalize('NFKC').toLocaleLowerCase();
+}
+async function loadCustomSongCatalog() {
+  if (customSongCatalog) return customSongCatalog;
+  if (customCatalogPromise) return customCatalogPromise;
+  customCatalogPromise = (async () => {
+    const response = await fetch('/api/song-catalog', { cache:'no-store' });
+    if (!response.ok) throw new Error('CATALOG_UNAVAILABLE');
+    const body = await response.json();
+    if (!body?.ok || !Array.isArray(body.songs)) throw new Error('INVALID_CATALOG');
+    customSongCatalog = body.songs;
+    return customSongCatalog;
+  })();
+  try { return await customCatalogPromise; }
+  finally { customCatalogPromise = null; }
+}
+function refreshCustomSongCounts() {
+  const selected = customSelectedIds.size;
+  const count = document.querySelector('#custom-mode-count');
+  if (count) count.textContent = String(selected);
+  const summary = document.querySelector('#custom-selection-count');
+  if (summary) summary.textContent = selected + ' selected';
+  const detail = document.querySelector('#custom-selection-breakdown');
+  if (detail && customSongCatalog) {
+    detail.textContent = DIFFICULTIES.map((d) =>
+      d.toUpperCase() + ' ' + customSongCatalog.filter((song) => song.difficulty === d && customSelectedIds.has(song.id)).length
+    ).join(' · ');
+  }
+  const create = document.querySelector('#create-game');
+  if (create && !create.dataset.submitting) create.disabled = selectedGameLength === 'custom' && (!customSongCatalog || selected === 0);
+}
+function refreshCustomSongList() {
+  const list = document.querySelector('#custom-song-list');
+  if (!list) return;
+  if (!customSongCatalog) {
+    list.innerHTML = '<p class="custom-song-message">Loading song list…</p>';
+    refreshCustomSongCounts();
+    return;
+  }
+  const q = searchSongText(customSearchQuery.trim());
+  const visible = customSongCatalog.filter((song) => searchSongText(song.title + ' ' + song.artist).includes(q));
+  list.innerHTML = visible.length ? DIFFICULTIES.map((difficulty) => {
+    const group = visible.filter((song) => song.difficulty === difficulty);
+    if (!group.length) return '';
+    return '<section class="custom-song-group"><div class="custom-song-group-title"><b>' +
+      difficulty.toUpperCase() + ' · ' + group.length + '</b><button type="button" data-select-level="' + difficulty +
+      '">SELECT GROUP</button></div><div class="custom-song-options">' + group.map((song) => {
+        return '<label class="custom-song-option"><input type="checkbox" data-song-id="' + esc(song.id) + '"' +
+          (customSelectedIds.has(song.id) ? ' checked' : '') + '><span class="custom-song-info"><strong dir="auto">' +
+          esc(song.title) + '</strong><small dir="auto">' + esc(song.artist) +
+          '</small></span></label>';
+      }).join('') + '</div></section>';
+  }).join('') : '<p class="custom-song-message">No songs match your search.</p>';
+  refreshCustomSongCounts();
+}
+function showCustomSongError(message) {
+  const error = document.querySelector('#custom-song-error');
+  if (error) error.textContent = message;
+}
+function setupCustomSongChooser() {
+  const slot = document.querySelector('#custom-song-slot');
+  const panel = document.querySelector('.setup-panel');
+  if (!slot || !panel) return;
+  const custom = selectedGameLength === 'custom';
+  slot.hidden = !custom;
+  panel.classList.toggle('custom-active', custom);
+  if (!custom) { refreshCustomSongCounts(); return; }
+  if (!slot.dataset.initialized) {
+    slot.dataset.initialized = 'true';
+    slot.innerHTML = '<div class="custom-song-toolbar"><div><b>YOUR SONG LIST</b> <span id="custom-selection-count" aria-live="polite">0 selected</span>' +
+      '<small id="custom-selection-breakdown"></small></div><div class="custom-song-buttons">' +
+      '<button type="button" id="custom-select-visible">SELECT VISIBLE</button>' +
+      '<button type="button" id="custom-clear-selection">CLEAR</button></div></div>' +
+      '<label class="custom-song-search-label" for="custom-song-search">SEARCH SONG OR ARTIST</label>' +
+      '<input id="custom-song-search" type="search" placeholder="Type song or artist name…" autocomplete="off">' +
+      '<div id="custom-song-list" class="custom-song-list" aria-label="Choose songs"></div>' +
+      '<div class="custom-song-error" id="custom-song-error" role="status"></div>';
+    slot.querySelector('#custom-song-search').addEventListener('input', (event) => {
+      customSearchQuery = event.target.value;
+      refreshCustomSongList();
+    });
+    slot.querySelector('#custom-select-visible').addEventListener('click', () => {
+      if (!customSongCatalog) return;
+      const q = searchSongText(customSearchQuery.trim());
+      for (const song of customSongCatalog) {
+        if (searchSongText(song.title + ' ' + song.artist).includes(q)) customSelectedIds.add(song.id);
+      }
+      showCustomSongError('');
+      refreshCustomSongList();
+    });
+    slot.querySelector('#custom-clear-selection').addEventListener('click', () => {
+      customSelectedIds.clear();
+      showCustomSongError('');
+      refreshCustomSongList();
+    });
+    slot.querySelector('#custom-song-list').addEventListener('change', (event) => {
+      const input = event.target.closest('input[data-song-id]');
+      if (!input) return;
+      if (input.checked) customSelectedIds.add(input.dataset.songId);
+      else customSelectedIds.delete(input.dataset.songId);
+      showCustomSongError('');
+      refreshCustomSongCounts();
+    });
+    slot.querySelector('#custom-song-list').addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-select-level]');
+      if (!button) return;
+      const q = searchSongText(customSearchQuery.trim());
+      for (const song of customSongCatalog || []) {
+        if (song.difficulty === button.dataset.selectLevel &&
+            searchSongText(song.title + ' ' + song.artist).includes(q)) customSelectedIds.add(song.id);
+      }
+      showCustomSongError('');
+      refreshCustomSongList();
+    });
+  }
+  refreshCustomSongList();
+  loadCustomSongCatalog().then(() => refreshCustomSongList()).catch(() => {
+    const list = document.querySelector('#custom-song-list');
+    if (list) list.innerHTML = '<p class="custom-song-message">Could not load song list. <button type="button" id="retry-custom-songs">RETRY</button></p>';
+    list?.querySelector('#retry-custom-songs')?.addEventListener('click', setupCustomSongChooser);
+    showCustomSongError('Song list unavailable. Check your connection.');
+    refreshCustomSongCounts();
+  });
 }
 function renderDisplaySetup() {
   app.innerHTML = `<main class="shell setup-shell">
@@ -237,8 +375,9 @@ function renderDisplaySetup() {
         <div class="setup-vs">VS</div>
         <label class="team-input team-b-input"><span>TEAM B</span><input id="team-b" maxlength="24" value="Team B"><i>★</i></label>
       </div>
-      <div class="mode-heading"><span>02</span><b>GAME LENGTH</b></div>
+      <div class="mode-heading"><span>02</span><b>GAME MODE</b></div>
       ${gameModeCards()}
+      <section id="custom-song-slot" class="custom-song-slot" hidden></section>
       <button class="create-room-btn" id="create-game">▶ CREATE ROOM</button>
     </section>
   </main>`;
@@ -249,16 +388,30 @@ function renderDisplaySetup() {
       card.classList.toggle('selected', selected);
       card.setAttribute('aria-checked', String(selected));
     });
+    setupCustomSongChooser();
   }));
+  setupCustomSongChooser();
   document.querySelector('#create-game')?.addEventListener('click', async () => {
     const createButton = document.querySelector('#create-game');
+    if (createButton.dataset.submitting) return;
+    if (selectedGameLength === 'custom' && (!customSongCatalog || customSelectedIds.size === 0)) {
+      showCustomSongError('Choose at least one song to start.');
+      return;
+    }
+    createButton.dataset.submitting = 'true';
     createButton.disabled = true;
     const result = await api('/api/display/create', {
       gameLength:selectedGameLength,
+      ...(selectedGameLength === 'custom' ? { songIds:[...customSelectedIds] } : {}),
       teamNames:{ A:document.querySelector('#team-a').value.trim(), B:document.querySelector('#team-b').value.trim() }
     });
-    createButton.disabled = false;
-    if (!result?.ok) return alert('Could not create game.');
+    delete createButton.dataset.submitting;
+    if (!result?.ok) {
+      refreshCustomSongCounts();
+      if (selectedGameLength === 'custom') showCustomSongError('Could not create this song list. Check the selection and try again.');
+      else alert('Could not create game.');
+      return;
+    }
     roomCode = result.roomCode; displayToken = result.displayToken; hostPin = result.hostPin; state = result.state;
     saveDisplay(); connectEvents(); history.replaceState({}, '', `/host?room=${roomCode}`); render();
   });
