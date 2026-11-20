@@ -73,12 +73,21 @@ function scoringFor(duration) {
     { until: 1.666 * d, points: 4 }, { until: 1.999 * d, points: 3 }, { until: 2.000 * d, points: 2 }
   ].map((tier) => ({ until: Number(tier.until.toFixed(3)), points: tier.points }));
 }
-function makePlaylist(lengthKey) {
+const knownSongIds = new Set(songs.map((song) => song.id));
+function validCustomSongIds(ids) {
+  return Array.isArray(ids) && ids.length > 0 && ids.length <= songs.length &&
+    ids.every((id) => typeof id === 'string' && knownSongIds.has(id)) &&
+    new Set(ids).size === ids.length;
+}
+function makePlaylist(lengthKey, selectedSongIds = null) {
+  const custom = lengthKey === 'custom';
   const counts = GAME_LENGTHS[lengthKey] || GAME_LENGTHS.normal;
+  const allowed = custom ? new Set(selectedSongIds || []) : null;
   const playlist = [];
   const artistHistory = [];
   for (const difficulty of ['easy', 'medium', 'hard']) {
-    const selected = shuffle(songs.filter((song) => song.difficulty === difficulty)).slice(0, counts[difficulty]);
+    const pool = songs.filter((song) => song.difficulty === difficulty && (!custom || allowed.has(song.id)));
+    const selected = shuffle(pool).slice(0, custom ? pool.length : counts[difficulty]);
     const ordered = spreadArtists(selected, artistHistory);
     playlist.push(...ordered.map((song) => ({ ...song, scoring: scoringFor(song.duration) })));
     artistHistory.push(...ordered.map((song) => song.artist));
@@ -285,17 +294,26 @@ function closeCaptainClients(room, team) {
 
 async function handleApi(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, statePersistence: Boolean(GAME_STATE_FILE), rooms: rooms.size, buildId: BUILD_ID, instanceId: INSTANCE_ID });
+  if (req.method === 'GET' && url.pathname === '/api/song-catalog') return json(res, 200, {
+    ok: true, songs: songs.map(({ id, title, artist, difficulty }) => ({ id, title, artist, difficulty }))
+  });
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   let body;
   try { body = await readJson(req); } catch { return json(res, 400, { ok: false, error: 'INVALID_JSON' }); }
 
   if (url.pathname === '/api/display/create') {
+    const lengthKey = body.gameLength === 'custom' ? 'custom' : (GAME_LENGTHS[body.gameLength] ? body.gameLength : 'normal');
+    if (lengthKey === 'custom' && !validCustomSongIds(body.songIds)) {
+      return json(res, 400, { ok: false, error: 'INVALID_SONG_SELECTION' });
+    }
+    const selectedSongIds = lengthKey === 'custom' ? [...body.songIds] : null;
+    const playlist = makePlaylist(lengthKey, selectedSongIds);
     const code = makeRoomCode(); const displayToken = token(); const hostPin = String(1000 + Math.floor(Math.random() * 9000));
-    const lengthKey = GAME_LENGTHS[body.gameLength] ? body.gameLength : 'normal'; const now = Date.now();
+    const now = Date.now();
     const room = {
       code, displayToken, hostPin, hostToken: null, captainTokens: { A: null, B: null }, captainClaimedAt: { A: null, B: null },
       teamNames: { A: cleanName(body.teamNames?.A, 'Team A'), B: cleanName(body.teamNames?.B, 'Team B') },
-      playlist: makePlaylist(lengthKey), gameLength: lengthKey, phase: 'LOBBY', currentIndex: -1, round: 'easy',
+      playlist, gameLength: lengthKey, selectedSongIds, phase: 'LOBBY', currentIndex: -1, round: playlist[0].difficulty,
       activeTeam: 'A', turnOwner: 'A', scores: { A: 0, B: 0 }, audioPosition: 0, totalHeardSeconds: 0,
       currentPoints: 10, playbacksCompleted: 0, awaitingReplay: false, replayStarted: false, playbackSeq: 0,
       revealed: false, audioReady: false, audioFallback: null, stealDeadline: null, stealTimer: null, history: [], clients: new Set(),
@@ -399,7 +417,7 @@ async function handleApi(req, res, url) {
   }
   if (action === 'host:restart') {
     if (room.phase !== 'FINISHED') return json(res, 409, { ok: false, error: 'NOT_ALLOWED' });
-    room.history = []; room.playlist = makePlaylist(room.gameLength); room.scores = { A: 0, B: 0 }; room.round = 'easy'; loadSong(room, 0);
+    room.history = []; room.playlist = makePlaylist(room.gameLength, room.selectedSongIds); room.scores = { A: 0, B: 0 }; room.round = room.playlist[0]?.difficulty || 'easy'; loadSong(room, 0);
     if (room.currentIndex === 0 && room.phase === 'ROUND_INTRO') room.phase = 'READY';
     broadcastState(room); return json(res, 200, { ok: true });
   }
