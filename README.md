@@ -10,6 +10,7 @@ A two-team music guessing game with a dedicated audience/game screen, a host-con
 - Join by QR code or 4-character room code.
 - Easy / Medium / Hard rounds.
 - Game lengths: Quick Hit (15 songs), Main Event (21), Full Battle (44).
+- Custom Set: choose any 1–44 songs from the catalog on the main-display setup screen; search by song title or artist in English or Hebrew, filter and select by difficulty. The server validates IDs and plays only that set, grouped Easy → Medium → Hard.
 - Turns alternate between teams; Medium starts with the opposite team to reduce first-player bias.
 - Captains can PLAY, STOP, continue the current play, and LOCK ANSWER.
 - STOP only pauses the audio; thinking time does not reduce the score.
@@ -142,6 +143,7 @@ The app intentionally stays small:
 - `data/songs.js` — song metadata and snippet durations.
 - `test/integration.test.js` — end-to-end state-machine audit.
 - `test/durability.test.js` — process-restart persistence audit.
+- `test/custom-playlist.test.js` — custom-set validation, transitions, Play Again, and checkpoint audit.
 - `test/phone-authority.test.js` — verifies Host/Captain phones work without SSE and still receive the first READY turn correctly.
 
 There is one authoritative game server; browser clients never own game state.
