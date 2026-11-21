@@ -178,7 +178,9 @@ function syncCaptainControls() {
   if (phase === 'STEAL_LOCKED') {
     const countdown = document.querySelector('#steal-countdown');
     if (countdown) {
-      countdown.textContent = 'LOCKED';
+      // Assigning textContent replaces child nodes even when the text is unchanged.
+      // Keep this idempotent: a STEAL_LOCKED DOM mutation must not retrigger itself.
+      if (countdown.textContent !== 'LOCKED') countdown.textContent = 'LOCKED';
       countdown.classList.add('locked');
     }
   }
@@ -209,10 +211,13 @@ if (isCaptainRoute || isHostRoute) {
     syncHostControls();
   };
   const observer = new MutationObserver(syncControls);
-  // Do not observe `disabled`: syncCaptainControls itself may change button.disabled.
-  // Watching that attribute can create a self-triggering microtask loop that starves
-  // rendering and the captain polling heartbeat as soon as the active-turn buttons appear.
-  observer.observe(document.documentElement, { subtree:true, childList:true, attributes:true, attributeFilter:['data-phase','data-round','data-connection'] });
+  // Only observe complete screen replacements at #app (game.js uses app.innerHTML).
+  // Never observe descendants: updating the steal countdown via textContent
+  // generates childList mutations, which previously caused infinite callbacks
+  // at STEAL_LOCKED and starved the phone heartbeat/polling.
+  const appRoot = document.querySelector('#app');
+  if (appRoot) observer.observe(appRoot, { childList:true });
+  observer.observe(document.body, { attributes:true, attributeFilter:['data-phase','data-round','data-connection'] });
   syncControls();
   window.addEventListener('beforeunload', () => {
     observer.disconnect();
